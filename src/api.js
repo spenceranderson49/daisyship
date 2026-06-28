@@ -2,30 +2,50 @@ import React, { useState, useMemo, useEffect } from "react";
 import { Package, Truck, Users, Plug, Plus, Check, X, ChevronRight, ChevronDown, Wifi, WifiOff, Loader2, Trash2, ShoppingBag, ArrowLeftRight, Search, Calendar, Settings as Cog, Calculator, ExternalLink, Edit3, RotateCcw, MapPin, Printer, Building2, CreditCard, BarChart3, Layers, FileText, Undo2, Zap, Download, Boxes, CheckCircle2, AlertTriangle, TrendingUp, ShieldCheck, Mail, Cloud } from "lucide-react";
 
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê RATE ENGINE (demo) ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
 const billable=(L,W,H,a)=>Math.max(Math.ceil((L*W*H)/DIM),Math.ceil(a||0),1);
 const zoneEst=(o,d)=>{const a=parseInt(String(o).slice(0,3)||"840",10);const b=parseInt(String(d).slice(0,3)||"840",10);return Math.min(8,Math.max(2,2+Math.round(Math.abs(a-b)/90)));};
-const RATES={
-  fedex_first:{carrier:"FedEx",base:62,pz:5.5,pl:3.2,fuel:.16,res:0,days:[1,1],label:"FedEx First Overnight¬Æ"},
-  fedex_prio:{carrier:"FedEx",base:38,pz:4.2,pl:2.6,fuel:.16,res:0,days:[1,1],label:"FedEx Priority Overnight¬Æ"},
-  fedex_std:{carrier:"FedEx",base:30,pz:3.6,pl:2.1,fuel:.16,res:0,days:[1,1],label:"FedEx Standard Overnight¬Æ"},
-  fedex_2dayam:{carrier:"FedEx",base:22,pz:2.5,pl:1.5,fuel:.16,res:0,days:[2,2],label:"FedEx 2Day¬Æ A.M."},
-  fedex_2day:{carrier:"FedEx",base:18,pz:2.2,pl:1.3,fuel:.16,res:0,days:[2,2],label:"FedEx 2Day¬Æ"},
-  fedex_saver:{carrier:"FedEx",base:14,pz:1.6,pl:.9,fuel:.16,res:0,days:[3,3],label:"FedEx Express Saver¬Æ"},
-  fedex_ground:{carrier:"FedEx",base:9.2,pz:.95,pl:.55,fuel:.16,res:4.2,days:[1,5],label:"FedEx Ground¬Æ"},
-  fedex_home:{carrier:"FedEx",base:8.2,pz:.9,pl:.52,fuel:.16,res:0,days:[1,5],label:"FedEx Home Delivery¬Æ"},
+const RATES={// Thin client for the DaisyShip serverless backend.
+const F = '/.netlify/functions';
+async function post(path, body) {
+  const res = await fetch(`${F}/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `${path} ${res.status}`);
+  return data;
+}
+async function get(path) {
+  const res = await fetch(`${F}/${path}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `${path} ${res.status}`);
+  return data;
+}
+export const api = {
+  quote: (b) => post('quote', b),
+  ship: (b) => post('ship', b),
+  shopifyOrders: () => get('shopify-orders'),
+  shopifyFulfill: (b) => post('shopify-fulfill', b),
+};
+
+  fedex_first:{carrier:"FedEx",base:62,pz:5.5,pl:3.2,fuel:.16,res:0,days:[1,1],label:"FedEx First Overnight®"},
+  fedex_prio:{carrier:"FedEx",base:38,pz:4.2,pl:2.6,fuel:.16,res:0,days:[1,1],label:"FedEx Priority Overnight®"},
+  fedex_std:{carrier:"FedEx",base:30,pz:3.6,pl:2.1,fuel:.16,res:0,days:[1,1],label:"FedEx Standard Overnight®"},
+  fedex_2dayam:{carrier:"FedEx",base:22,pz:2.5,pl:1.5,fuel:.16,res:0,days:[2,2],label:"FedEx 2Day® A.M."},
+  fedex_2day:{carrier:"FedEx",base:18,pz:2.2,pl:1.3,fuel:.16,res:0,days:[2,2],label:"FedEx 2Day®"},
+  fedex_saver:{carrier:"FedEx",base:14,pz:1.6,pl:.9,fuel:.16,res:0,days:[3,3],label:"FedEx Express Saver®"},
+  fedex_ground:{carrier:"FedEx",base:9.2,pz:.95,pl:.55,fuel:.16,res:4.2,days:[1,5],label:"FedEx Ground®"},
+  fedex_home:{carrier:"FedEx",base:8.2,pz:.9,pl:.52,fuel:.16,res:0,days:[1,5],label:"FedEx Home Delivery®"},
   fedex_econ:{carrier:"FedEx",base:7.1,pz:.7,pl:.4,fuel:.12,res:0,days:[2,7],label:"FedEx Ground Economy"},
-  ups_nda:{carrier:"UPS",base:40,pz:4.4,pl:2.7,fuel:.16,res:5.3,days:[1,1],label:"UPS Next Day Air¬Æ"},
-  ups_2day:{carrier:"UPS",base:19,pz:2.3,pl:1.35,fuel:.16,res:5.3,days:[2,2],label:"UPS 2nd Day Air¬Æ"},
-  ups_3day:{carrier:"UPS",base:15,pz:1.7,pl:1.0,fuel:.16,res:5.3,days:[3,3],label:"UPS 3 Day Select¬Æ"},
-  ups_ground:{carrier:"UPS",base:8.5,pz:.95,pl:.55,fuel:.16,res:5.3,days:[1,5],label:"UPS¬Æ Ground"},
-  usps_priority:{carrier:"USPS",base:9.6,pz:1.1,pl:.7,fuel:0,res:0,days:[1,3],label:"USPS Priority Mail¬Æ"},
-  usps_ga:{carrier:"USPS",base:7.8,pz:.65,pl:.45,fuel:0,res:0,days:[2,5],label:"USPS Ground Advantage¬Æ"},
-  fedex_intl_first:{carrier:"FedEx",intl:true,base:96,pl:9.5,fuel:.17,days:[1,3],label:"FedEx International First¬Æ"},
-  fedex_intl_prio:{carrier:"FedEx",intl:true,base:78,pl:7.5,fuel:.17,days:[1,3],label:"FedEx International Priority¬Æ"},
-  fedex_intl_econ:{carrier:"FedEx",intl:true,base:58,pl:5.5,fuel:.17,days:[2,5],label:"FedEx International Economy¬Æ"},
-  fedex_intl_connect:{carrier:"FedEx",intl:true,base:42,pl:4.2,fuel:.15,days:[2,6],label:"FedEx International Connect Plus¬Æ"},
+  ups_nda:{carrier:"UPS",base:40,pz:4.4,pl:2.7,fuel:.16,res:5.3,days:[1,1],label:"UPS Next Day Air®"},
+  ups_2day:{carrier:"UPS",base:19,pz:2.3,pl:1.35,fuel:.16,res:5.3,days:[2,2],label:"UPS 2nd Day Air®"},
+  ups_3day:{carrier:"UPS",base:15,pz:1.7,pl:1.0,fuel:.16,res:5.3,days:[3,3],label:"UPS 3 Day Select®"},
+  ups_ground:{carrier:"UPS",base:8.5,pz:.95,pl:.55,fuel:.16,res:5.3,days:[1,5],label:"UPS® Ground"},
+  usps_priority:{carrier:"USPS",base:9.6,pz:1.1,pl:.7,fuel:0,res:0,days:[1,3],label:"USPS Priority Mail®"},
+  usps_ga:{carrier:"USPS",base:7.8,pz:.65,pl:.45,fuel:0,res:0,days:[2,5],label:"USPS Ground Advantage®"},
+  fedex_intl_first:{carrier:"FedEx",intl:true,base:96,pl:9.5,fuel:.17,days:[1,3],label:"FedEx International First®"},
+  fedex_intl_prio:{carrier:"FedEx",intl:true,base:78,pl:7.5,fuel:.17,days:[1,3],label:"FedEx International Priority®"},
+  fedex_intl_econ:{carrier:"FedEx",intl:true,base:58,pl:5.5,fuel:.17,days:[2,5],label:"FedEx International Economy®"},
+  fedex_intl_connect:{carrier:"FedEx",intl:true,base:42,pl:4.2,fuel:.15,days:[2,6],label:"FedEx International Connect Plus®"},
   dhl_express:{carrier:"DHL",intl:true,base:72,pl:7.0,fuel:.16,days:[1,3],label:"DHL Express Worldwide"},
   dhl_econ:{carrier:"DHL",intl:true,base:50,pl:4.8,fuel:.14,days:[2,5],label:"DHL Economy Select"},
 };
@@ -54,33 +74,33 @@ const money=n=>`$${Number(n).toFixed(2)}`;
 const rnd=(n)=>Math.random().toString().slice(2,2+n);
 const newTracking=carrier=>carrier==="UPS"?"1Z"+Math.random().toString(36).slice(2,10).toUpperCase():carrier==="USPS"?"9400"+rnd(18):carrier==="DHL"?rnd(10):rnd(12);
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê SEED ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ SEED ════════ */
 const SEED_CLIENTS=[{id:"c1",name:"Sparkle in Pink",markup:18,origin:"84003"},{id:"c2",name:"House accounts",markup:12,origin:"84057"}];
 const SEED_ACCOUNTS=[{id:"a1",label:"England Logistics",provider:"england",account:"20601652",status:"connected",mode:"demo"}];
 const SEED_ORDERS=[
-  {id:1042,name:"#1042",customer:"Jenna Reyes",company:"",zip:"90210",city:"Beverly Hills",state:"CA",address1:"412 Canon Dr",phone:"310-555-0142",email:"jenna@example.com",total:"48.00",weight:2,items:"2√ó Ruffle Leggings",status:"unfulfilled",date:"6/24"},
-  {id:1043,name:"#1043",customer:"Marcus Lee",company:"",zip:"10001",city:"New York",state:"NY",address1:"88 W 28th St",phone:"212-555-0119",email:"marcus@example.com",total:"112.50",weight:5,items:"1√ó Tutu Set, 3√ó Hair Bows",status:"unfulfilled",date:"6/24"},
-  {id:1044,name:"#1044",customer:"Priya Shah",company:"",zip:"60614",city:"Chicago",state:"IL",address1:"2210 N Halsted St",phone:"312-555-0173",email:"priya@example.com",total:"29.99",weight:1,items:"1√ó Onesie",status:"unfulfilled",date:"6/25"},
-  {id:1045,name:"#1045",customer:"Dana Cole",company:"",zip:"33101",city:"Miami",state:"FL",address1:"701 Brickell Ave",phone:"305-555-0188",email:"dana@example.com",total:"76.20",weight:3,items:"1√ó Swim Set, 2√ó Sandals",status:"unfulfilled",date:"6/25"},
+  {id:1042,name:"#1042",customer:"Jenna Reyes",company:"",zip:"90210",city:"Beverly Hills",state:"CA",address1:"412 Canon Dr",phone:"310-555-0142",email:"jenna@example.com",total:"48.00",weight:2,items:"2× Ruffle Leggings",status:"unfulfilled",date:"6/24"},
+  {id:1043,name:"#1043",customer:"Marcus Lee",company:"",zip:"10001",city:"New York",state:"NY",address1:"88 W 28th St",phone:"212-555-0119",email:"marcus@example.com",total:"112.50",weight:5,items:"1× Tutu Set, 3× Hair Bows",status:"unfulfilled",date:"6/24"},
+  {id:1044,name:"#1044",customer:"Priya Shah",company:"",zip:"60614",city:"Chicago",state:"IL",address1:"2210 N Halsted St",phone:"312-555-0173",email:"priya@example.com",total:"29.99",weight:1,items:"1× Onesie",status:"unfulfilled",date:"6/25"},
+  {id:1045,name:"#1045",customer:"Dana Cole",company:"",zip:"33101",city:"Miami",state:"FL",address1:"701 Brickell Ave",phone:"305-555-0188",email:"dana@example.com",total:"76.20",weight:3,items:"1× Swim Set, 2× Sandals",status:"unfulfilled",date:"6/25"},
 ];
 const SCAN_CITIES=["Memphis, TN hub","Indianapolis, IN hub","Ontario, CA","Newark, NJ","Atlanta, GA hub","Local facility","Out for delivery"];
 const seedShip=(dayAgo,carrier,service,name,city,state,zip,cost,weight,status,lastScan,onTime=true)=>({id:Math.floor(Math.random()*1e9),date:new Date(Date.now()-dayAgo*864e5).toLocaleDateString(),dayAgo,tracking:newTracking(carrier),carrier,service,recipient:{name,city,state,zip},sender:{},fromZip:"84003",toZip:zip,weight,dims:{L:12,W:9,H:4},pieces:[{weight,L:12,W:9,H:4}],cost,sell:Math.round(cost*1.18*100)/100,billTo:"sender",thirdAcct:"",status:status||(dayAgo>3?"Delivered":dayAgo>0?"In transit":"Label created"),lastScan:lastScan||"Origin scan",eta:new Date(Date.now()+Math.max(0,3-dayAgo)*864e5).toLocaleDateString(),onTime,reference:"",client:"Sparkle in Pink",intl:false});
 const SEED_SHIPMENTS=[
-  seedShip(0,"FedEx","FedEx Ground¬Æ","Avery Kim","Austin","TX","73301",9.4,3,"Label created","Label created"),
-  seedShip(0,"UPS","UPS¬Æ Ground","Liam Ford","Reno","NV","89501",8.9,2,"In transit","Salt Lake City, UT"),
-  seedShip(1,"FedEx","FedEx Home Delivery¬Æ","Mia Chen","Portland","OR","97201",10.2,4,"Out for delivery","Out for delivery ‚Äî Portland, OR"),
-  seedShip(1,"USPS","USPS Ground Advantage¬Æ","Noah Diaz","Tampa","FL","33601",7.6,1,"In transit","Atlanta, GA hub"),
-  seedShip(2,"FedEx","FedEx 2Day¬Æ","Ella Brooks","Denver","CO","80201",19.3,3,"Exception","Delivery exception ‚Äî address issue",false),
+  seedShip(0,"FedEx","FedEx Ground®","Avery Kim","Austin","TX","73301",9.4,3,"Label created","Label created"),
+  seedShip(0,"UPS","UPS® Ground","Liam Ford","Reno","NV","89501",8.9,2,"In transit","Salt Lake City, UT"),
+  seedShip(1,"FedEx","FedEx Home Delivery®","Mia Chen","Portland","OR","97201",10.2,4,"Out for delivery","Out for delivery — Portland, OR"),
+  seedShip(1,"USPS","USPS Ground Advantage®","Noah Diaz","Tampa","FL","33601",7.6,1,"In transit","Atlanta, GA hub"),
+  seedShip(2,"FedEx","FedEx 2Day®","Ella Brooks","Denver","CO","80201",19.3,3,"Exception","Delivery exception — address issue",false),
   seedShip(2,"DHL","DHL Express Worldwide","Sofia Rossi","Toronto","ON","M5V",41.0,3,"In transit","Cincinnati, OH gateway"),
-  seedShip(3,"UPS","UPS¬Æ Ground","Owen Gray","Boise","ID","83701",8.1,2,"Delivered","Delivered ‚Äî front porch"),
-  seedShip(4,"FedEx","FedEx Ground¬Æ","Zoe Park","Mesa","AZ","85201",9.0,3,"Delivered","Delivered ‚Äî received"),
-  seedShip(5,"USPS","USPS Priority Mail¬Æ","Kai Reed","Salt Lake City","UT","84101",9.8,2,"Delivered","Delivered ‚Äî mailbox",false),
-  seedShip(6,"FedEx","FedEx Ground Economy","Ivy Lane","Fresno","CA","93650",7.2,1,"Delivered","Delivered ‚Äî received"),
+  seedShip(3,"UPS","UPS® Ground","Owen Gray","Boise","ID","83701",8.1,2,"Delivered","Delivered — front porch"),
+  seedShip(4,"FedEx","FedEx Ground®","Zoe Park","Mesa","AZ","85201",9.0,3,"Delivered","Delivered — received"),
+  seedShip(5,"USPS","USPS Priority Mail®","Kai Reed","Salt Lake City","UT","84101",9.8,2,"Delivered","Delivered — mailbox",false),
+  seedShip(6,"FedEx","FedEx Ground Economy","Ivy Lane","Fresno","CA","93650",7.2,1,"Delivered","Delivered — received"),
 ];
 const SEED_RETURNS=[{id:9001,rma:"RMA-4471",customer:"Jenna Reyes",order:"#1039",reason:"Wrong size",carrier:"FedEx",tracking:newTracking("FedEx"),status:"In transit",date:new Date(Date.now()-864e5).toLocaleDateString()}];
 const SEED_RULES=[
-  {id:"r1",name:"Heavy ‚Üí Ground",enabled:true,field:"weight",op:">",value:"10",action:"service",actionValue:"Cheapest Ground"},
-  {id:"r2",name:"High-value ‚Üí Signature",enabled:true,field:"value",op:">",value:"150",action:"signature",actionValue:"Require signature"},
+  {id:"r1",name:"Heavy → Ground",enabled:true,field:"weight",op:">",value:"10",action:"service",actionValue:"Cheapest Ground"},
+  {id:"r2",name:"High-value → Signature",enabled:true,field:"value",op:">",value:"150",action:"signature",actionValue:"Require signature"},
 ];
 const PRESETS=[{name:"Custom",L:12,W:9,H:4},{name:"Poly mailer",L:10,W:7,H:1},{name:"Small box",L:8,W:6,H:4},{name:"Medium box",L:12,W:9,H:6},{name:"Large box",L:16,W:12,H:8}];
 const SEED_BOXES=[
@@ -119,7 +139,7 @@ function analytics(shipments){
   const v=shipments.filter(s=>s.status!=="Voided");
   const spend=v.reduce((a,s)=>a+s.cost,0),revenue=v.reduce((a,s)=>a+s.sell,0);
   const byCarrier={}; v.forEach(s=>byCarrier[s.carrier]=(byCarrier[s.carrier]||0)+1);
-  const byClient={}; v.forEach(s=>{const c=s.client||"‚Äî";byClient[c]=byClient[c]||{count:0,spend:0,rev:0};byClient[c].count++;byClient[c].spend+=s.cost;byClient[c].rev+=s.sell;});
+  const byClient={}; v.forEach(s=>{const c=s.client||"—";byClient[c]=byClient[c]||{count:0,spend:0,rev:0};byClient[c].count++;byClient[c].spend+=s.cost;byClient[c].rev+=s.sell;});
   const byDay=Array(7).fill(0); v.forEach(s=>{const d=s.dayAgo??0;if(d<7)byDay[6-d]++;});
   return {count:v.length,spend,revenue,profit:revenue-spend,avg:v.length?spend/v.length:0,byCarrier,byClient,byDay};
 }
@@ -138,16 +158,16 @@ function downloadCSV(name,rows){
   const a=document.createElement("a");a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê EMAIL SEED ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ EMAIL SEED ════════ */
 const SEED_EMAILS=[
-  {id:"e1",date:new Date(Date.now()-3600e3).toLocaleString(),to:"jenna@example.com",subject:"Your order #1039 is on its way ‚òÅÔ∏è",type:"Shipped",status:"sent"},
-  {id:"e2",date:new Date(Date.now()-7200e3).toLocaleString(),to:"marcus@example.com",subject:"Delivered: your order #1037 ‚òÅÔ∏è",type:"Delivered",status:"sent"},
+  {id:"e1",date:new Date(Date.now()-3600e3).toLocaleString(),to:"jenna@example.com",subject:"Your order #1039 is on its way ☁️",type:"Shipped",status:"sent"},
+  {id:"e2",date:new Date(Date.now()-7200e3).toLocaleString(),to:"marcus@example.com",subject:"Delivered: your order #1037 ☁️",type:"Delivered",status:"sent"},
 ];
 const NOTIFY_DEFAULTS={orderConfirm:true,shipped:true,delivered:true,returnLabel:true,exception:true};
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê INTERNATIONAL ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ INTERNATIONAL ════════ */
 const COUNTRIES=["United States","Canada","Mexico","United Kingdom","Germany","France","Australia","Japan","South Korea","Brazil","Netherlands","Spain"];
-const INCOTERMS=["DAP ‚Äî Delivered at Place","DDP ‚Äî Delivered Duty Paid","EXW ‚Äî Ex Works","FCA ‚Äî Free Carrier","CPT ‚Äî Carriage Paid To"];
+const INCOTERMS=["DAP — Delivered at Place","DDP — Delivered Duty Paid","EXW — Ex Works","FCA — Free Carrier","CPT — Carriage Paid To"];
 const EXPORT_REASONS=["Sale","Gift","Sample","Return","Repair","Personal use"];
 const HTS_SUGGEST=[
   {code:"6111.20.6020",desc:"Babies' garments, knit cotton"},
@@ -159,7 +179,7 @@ const HTS_SUGGEST=[
   {code:"6110.20.2079",desc:"Sweaters/pullovers, cotton"},
 ];
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê APP ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ APP ════════ */
 export default function App(){
   const [tab,setTab]=useState("ship");
   const [clients,setClients]=useState(SEED_CLIENTS);
@@ -184,7 +204,7 @@ export default function App(){
   const onShipped=(rec,orderId)=>{
     setShipments(p=>[{...rec,dayAgo:0,client:client.name},...p]);
     if(orderId) setOrders(o=>o.map(x=>x.id===orderId?{...x,status:"fulfilled",tracking:rec.tracking}:x));
-    if(settings.notify.shipped&&rec.recipient?.name) logEmail({to:(rec.recipient?.email)||"customer@example.com",subject:`Your ${settings.company} order has shipped ‚òÅÔ∏è`,type:"Shipped"});
+    if(settings.notify.shipped&&rec.recipient?.name) logEmail({to:(rec.recipient?.email)||"customer@example.com",subject:`Your ${settings.company} order has shipped ☁️`,type:"Shipped"});
   };
 
   const TABS=[["dashboard","Dashboard",BarChart3],["ship","Ship",Package],["orders","Orders",ShoppingBag],["batch","Batch",Layers],["shipments","Shipments",Truck],["returns","Returns",Undo2],["pickups","Pickups",Calendar],["manifests","Manifests",FileText],["reports","Reports",TrendingUp],["quote","Quote",Calculator],["checkout","Checkout Rates",ShoppingBag],["settings","Settings",Cog]];
@@ -225,7 +245,7 @@ export default function App(){
   );
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê SHIP ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ SHIP ════════ */
 function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,clearPrefill,onShipped}){
   const empty={country:"United States",name:"",company:"",zip:"",state:"",city:"",address1:"",address2:"",address3:"",phone:"",email:""};
   const [sender,setSender]=useState({country:"United States",...settings.sender,address2:"STE A",address3:""});
@@ -266,7 +286,7 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
 
   const print=(q)=>{
     const carrier=carrierOf(q.label);
-    const rec={id:Date.now(),date:new Date().toLocaleDateString(),tracking:newTracking(carrier),carrier,service:q.label,recipient:{...receiver},sender:{...sender},fromZip:sender.zip,toZip:receiver.zip,weight:totalWeight,pieces:pieces.map(p=>({...p})),dims:pieces[0],insurance,cost:q.cost,sell:q.sell,billTo,thirdAcct,status:"Label created",lastScan:"Label created",eta:"‚Äî",onTime:true,reference,intl,customs:intl?{...customs,total:customsTotal,ci:"CI-"+rnd(5)}:null};
+    const rec={id:Date.now(),date:new Date().toLocaleDateString(),tracking:newTracking(carrier),carrier,service:q.label,recipient:{...receiver},sender:{...sender},fromZip:sender.zip,toZip:receiver.zip,weight:totalWeight,pieces:pieces.map(p=>({...p})),dims:pieces[0],insurance,cost:q.cost,sell:q.sell,billTo,thirdAcct,status:"Label created",lastScan:"Label created",eta:"—",onTime:true,reference,intl,customs:intl?{...customs,total:customsTotal,ci:"CI-"+rnd(5)}:null};
     onShipped(rec,selectedOrder);
     setBought(q.key);setTimeout(()=>setBought(null),1800);
   };
@@ -302,10 +322,10 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
           <button onClick={swap} title="Swap" className="hidden lg:flex absolute left-1/2 top-6 -translate-x-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-stone-200 border border-stone-300 hover:bg-stone-300 text-stone-700"><ArrowLeftRight className="w-4 h-4"/></button>
           <AddressCard title="Receiver" data={receiver} set={setReceiver} required residential={residential} setResidential={setRes}/>
         </div>
-        {intl&&<div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2"><MapPin className="w-4 h-4"/>International shipment to <b>{receiver.country}</b> ‚Äî FedEx &amp; DHL rates shown, customs info required below.</div>}
+        {intl&&<div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2"><MapPin className="w-4 h-4"/>International shipment to <b>{receiver.country}</b> — FedEx &amp; DHL rates shown, customs info required below.</div>}
         <div className="flex flex-wrap items-center gap-3">
           <button onClick={runValidate} className="flex items-center gap-1.5 text-xs bg-stone-200 hover:bg-stone-300 rounded px-2.5 py-1.5 font-medium text-stone-700"><ShieldCheck className="w-3.5 h-3.5"/>Validate receiver address</button>
-          {valid&&(valid.ok?<span className="flex items-center gap-1 text-xs text-emerald-700"><CheckCircle2 className="w-3.5 h-3.5"/>Address validated &amp; standardized</span>:<span className="flex items-center gap-1 text-xs text-blue-600"><AlertTriangle className="w-3.5 h-3.5"/>{valid.issues.join(" ¬∑ ")}</span>)}
+          {valid&&(valid.ok?<span className="flex items-center gap-1 text-xs text-emerald-700"><CheckCircle2 className="w-3.5 h-3.5"/>Address validated &amp; standardized</span>:<span className="flex items-center gap-1 text-xs text-blue-600"><AlertTriangle className="w-3.5 h-3.5"/>{valid.issues.join(" · ")}</span>)}
         </div>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={returnDiff} onChange={e=>setReturnDiff(e.target.checked)} className="accent-blue-600"/>Return address differs from sender</label>
@@ -318,7 +338,7 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
 
         <div className="bg-stone-100 border border-stone-200 rounded-lg p-3 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-[11px] uppercase tracking-widest text-stone-600 font-semibold">Packages ¬∑ {pieces.length}</div>
+            <div className="text-[11px] uppercase tracking-widest text-stone-600 font-semibold">Packages · {pieces.length}</div>
             <div className="flex items-center gap-4">
               <span className="text-[11px] text-stone-400 font-mono">total {totalWeight} lb</span>
               <div className="flex items-center gap-1"><span className="text-[10px] uppercase tracking-widest text-stone-500">Insure $</span><input type="number" value={insurance} onChange={e=>setInsurance(e.target.value)} placeholder="0" className="w-16 bg-white border border-stone-300 rounded px-2 py-1 text-sm font-mono outline-none focus:border-blue-500 placeholder-stone-300"/></div>
@@ -341,7 +361,7 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
 
         {intl&&(
           <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-3 space-y-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-blue-700"><FileText className="w-4 h-4"/>Customs ¬∑ Commercial invoice</div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-blue-700"><FileText className="w-4 h-4"/>Customs · Commercial invoice</div>
             <div className="grid sm:grid-cols-3 gap-2">
               <Field label="Reason for export"><Select value={customs.reason} onChange={e=>setCustoms({...customs,reason:e.target.value})}>{EXPORT_REASONS.map(r=><option key={r}>{r}</option>)}</Select></Field>
               <Field label="Incoterms"><Select value={customs.incoterm} onChange={e=>setCustoms({...customs,incoterm:e.target.value})}>{INCOTERMS.map(r=><option key={r}>{r}</option>)}</Select></Field>
@@ -380,24 +400,24 @@ function CommercialInvoice({sender,receiver,customs,total,reference,pieces,total
   return (
     <div className="bg-white border border-stone-300 rounded-lg p-5 text-[12px] text-stone-700" style={{fontFamily:"ui-sans-serif,system-ui"}}>
       <div className="flex items-start justify-between border-b border-stone-300 pb-3 mb-3">
-        <div><div className="text-lg font-bold tracking-tight text-stone-900">COMMERCIAL INVOICE</div><div className="text-stone-400">ShippingCloud ¬∑ for customs clearance</div></div>
-        <div className="text-right"><div>Invoice # <span className="font-mono">{customs.ci||"CI-PREVIEW"}</span></div><div>Date {new Date().toLocaleDateString()}</div><div>Ref {reference||"‚Äî"}</div></div>
+        <div><div className="text-lg font-bold tracking-tight text-stone-900">COMMERCIAL INVOICE</div><div className="text-stone-400">ShippingCloud · for customs clearance</div></div>
+        <div className="text-right"><div>Invoice # <span className="font-mono">{customs.ci||"CI-PREVIEW"}</span></div><div>Date {new Date().toLocaleDateString()}</div><div>Ref {reference||"—"}</div></div>
       </div>
       <div className="grid grid-cols-2 gap-4 mb-3">
         <div><div className="text-[10px] uppercase tracking-widest text-stone-400 mb-0.5">Exporter / Shipper</div><div className="font-medium text-stone-900">{sender.company||sender.name}</div><div>{sender.address1}</div><div>{sender.city}, {sender.state} {sender.zip}</div><div>{sender.country}</div></div>
-        <div><div className="text-[10px] uppercase tracking-widest text-stone-400 mb-0.5">Importer / Consignee</div><div className="font-medium text-stone-900">{receiver.name}{receiver.company?` ¬∑ ${receiver.company}`:""}</div><div>{receiver.address1}</div><div>{receiver.city}, {receiver.state} {receiver.zip}</div><div>{receiver.country}</div></div>
+        <div><div className="text-[10px] uppercase tracking-widest text-stone-400 mb-0.5">Importer / Consignee</div><div className="font-medium text-stone-900">{receiver.name}{receiver.company?` · ${receiver.company}`:""}</div><div>{receiver.address1}</div><div>{receiver.city}, {receiver.state} {receiver.zip}</div><div>{receiver.country}</div></div>
       </div>
       <div className="grid grid-cols-3 gap-3 mb-3 text-[11px]">
         <div><span className="text-stone-400">Reason for export:</span> {customs.reason}</div>
-        <div><span className="text-stone-400">Incoterms:</span> {(customs.incoterm||"").split(" ‚Äî ")[0]}</div>
+        <div><span className="text-stone-400">Incoterms:</span> {(customs.incoterm||"").split(" — ")[0]}</div>
         <div><span className="text-stone-400">Duties/taxes:</span> {customs.dutiesBill==="sender"?"Prepaid (DDP)":"Collect (DAP)"}</div>
       </div>
       <table className="w-full border-collapse">
         <thead><tr className="border-y border-stone-300 text-[10px] uppercase tracking-wide text-stone-400 text-left"><th className="py-1.5 font-normal">Description</th><th className="font-normal">HTS code</th><th className="font-normal">Origin</th><th className="font-normal text-right">Qty</th><th className="font-normal text-right">Unit</th><th className="font-normal text-right">Total</th></tr></thead>
-        <tbody>{customs.lines.map((l,i)=>(<tr key={i} className="border-b border-stone-100"><td className="py-1.5">{l.desc||<span className="text-stone-300">‚Äî</span>}</td><td className="font-mono">{l.hts||"‚Äî"}</td><td>{l.origin}</td><td className="text-right">{l.qty}</td><td className="text-right font-mono">{money(+l.value||0)}</td><td className="text-right font-mono">{money((+l.qty||0)*(+l.value||0))}</td></tr>))}</tbody>
+        <tbody>{customs.lines.map((l,i)=>(<tr key={i} className="border-b border-stone-100"><td className="py-1.5">{l.desc||<span className="text-stone-300">—</span>}</td><td className="font-mono">{l.hts||"—"}</td><td>{l.origin}</td><td className="text-right">{l.qty}</td><td className="text-right font-mono">{money(+l.value||0)}</td><td className="text-right font-mono">{money((+l.qty||0)*(+l.value||0))}</td></tr>))}</tbody>
         <tfoot><tr className="font-semibold text-stone-900"><td colSpan={5} className="text-right py-2 pr-2">Total declared value</td><td className="text-right font-mono">{money(total)}</td></tr></tfoot>
       </table>
-      <div className="flex justify-between text-[11px] text-stone-500 mt-2"><span>{pieces.length} package(s) ¬∑ {totalWeight} lb total</span><span>Currency: USD</span></div>
+      <div className="flex justify-between text-[11px] text-stone-500 mt-2"><span>{pieces.length} package(s) · {totalWeight} lb total</span><span>Currency: USD</span></div>
       <div className="mt-4 pt-3 border-t border-stone-200 text-[11px] text-stone-500">I declare the information on this invoice to be true and correct to the best of my knowledge.</div>
       <div className="mt-6 flex justify-between text-[11px]"><div className="border-t border-stone-400 w-48 pt-1 text-stone-400">Signature</div><div className="border-t border-stone-400 w-32 pt-1 text-stone-400">Date</div></div>
     </div>
@@ -414,7 +434,7 @@ function ServiceList({quotes,best,bought,action,label,doneLabel,showCost}){
         return (<div key={c} className="mb-4"><div className={`text-xs font-bold tracking-wide mb-1.5 ${CARRIER_TINT[c]}`}>{c}</div><div className="space-y-1.5">
           {list.map(q=>(
             <div key={q.key} className={`border rounded-lg px-3 py-2.5 flex items-center gap-4 ${q.key===best?"border-blue-200 bg-blue-50":"border-stone-200 bg-white"}`}>
-              <div className="flex-1 min-w-0"><div className="flex items-center gap-2"><span className="text-sm truncate">{q.label}</span>{q.key===best&&<span className="text-[10px] uppercase text-blue-600 border border-blue-200 rounded px-1">best value</span>}</div><div className="text-[11px] text-stone-500">{q.minDays?(q.minDays===q.maxDays?`${q.minDays} business day${q.minDays>1?"s":""}`:`${q.minDays}‚Äì${q.maxDays} days`):""}</div></div>
+              <div className="flex-1 min-w-0"><div className="flex items-center gap-2"><span className="text-sm truncate">{q.label}</span>{q.key===best&&<span className="text-[10px] uppercase text-blue-600 border border-blue-200 rounded px-1">best value</span>}</div><div className="text-[11px] text-stone-500">{q.minDays?(q.minDays===q.maxDays?`${q.minDays} business day${q.minDays>1?"s":""}`:`${q.minDays}–${q.maxDays} days`):""}</div></div>
               {showCost&&<div className="text-right font-mono hidden sm:block"><div className="text-[10px] uppercase tracking-widest text-stone-400">cost</div><div className="text-sm text-stone-500">{money(q.cost)}</div></div>}
               <div className="text-right font-mono"><div className="text-base font-semibold text-stone-900">{money(q.sell??q.cost)}</div></div>
               {action&&<button onClick={()=>action(q)} className={`shrink-0 w-32 text-sm rounded px-3 py-2 font-medium flex items-center justify-center gap-1.5 ${bought===q.key?"bg-blue-600 text-white":"bg-stone-900 text-white hover:bg-stone-800"}`}>{bought===q.key?<><Check className="w-4 h-4"/>{doneLabel}</>:<><Printer className="w-4 h-4"/>{label}</>}</button>}
@@ -426,7 +446,7 @@ function ServiceList({quotes,best,bought,action,label,doneLabel,showCost}){
   );
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê ORDERS ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ ORDERS ════════ */
 function Orders({orders,setOrders,goShip}){
   const [filter,setFilter]=useState("all");
   const [q,setQ]=useState("");
@@ -472,7 +492,7 @@ function Orders({orders,setOrders,goShip}){
   );
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê SHIPMENTS (history) ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ SHIPMENTS (history) ════════ */
 function Shipments({shipments,setShipments,goShip}){
   const [open,setOpen]=useState(null);
   if(!shipments.length)return <Empty icon={Truck} title="No shipments yet" body="Print a label on the Ship tab and it lands here with tracking, edit & reship."/>;
@@ -487,7 +507,7 @@ function Shipments({shipments,setShipments,goShip}){
           <div className="flex items-center gap-3 px-4 py-3 hover:bg-stone-50">
             <button onClick={()=>setOpen(open===s.id?null:s.id)} className="text-stone-400"><ChevronRight className={`w-4 h-4 transition-transform ${open===s.id?"rotate-90":""}`}/></button>
             <div className="w-24 text-sm font-mono text-stone-500">{s.date}</div>
-            <div className="flex-1 min-w-0"><div className="text-sm text-stone-800 truncate">{s.recipient?.name||"‚Äî"}</div><div className="text-[11px] text-stone-400 truncate">{s.service}</div></div>
+            <div className="flex-1 min-w-0"><div className="text-sm text-stone-800 truncate">{s.recipient?.name||"—"}</div><div className="text-[11px] text-stone-400 truncate">{s.service}</div></div>
             <div className="w-40 hidden md:block"><a href={TRACK_URL[s.carrier](s.tracking)} target="_blank" rel="noopener" className="text-blue-600 underline font-mono text-xs flex items-center gap-1 truncate">{s.tracking}<ExternalLink className="w-3 h-3 shrink-0"/></a></div>
             <div className="w-20 text-right font-mono text-sm text-stone-900">{money(s.sell)}</div>
             <div className="w-24 text-right"><Badge tone={tone(s.status)}>{s.status}</Badge></div>
@@ -496,12 +516,12 @@ function Shipments({shipments,setShipments,goShip}){
             <div className="px-12 pb-4 pt-1 bg-stone-50/60 text-sm">
               <div className="grid sm:grid-cols-2 gap-x-8 gap-y-1 mb-3">
                 <Info k="Carrier / service" v={s.service}/>
-                <Info k="Tracking" v={<a href={TRACK_URL[s.carrier](s.tracking)} target="_blank" rel="noopener" className="text-blue-600 underline">{s.tracking} ‚Üó</a>}/>
-                <Info k="To" v={`${s.recipient?.name||""} ‚Äî ${s.recipient?.city||""}, ${s.recipient?.state||""} ${s.recipient?.zip||""}`}/>
+                <Info k="Tracking" v={<a href={TRACK_URL[s.carrier](s.tracking)} target="_blank" rel="noopener" className="text-blue-600 underline">{s.tracking} ↗</a>}/>
+                <Info k="To" v={`${s.recipient?.name||""} — ${s.recipient?.city||""}, ${s.recipient?.state||""} ${s.recipient?.zip||""}`}/>
                 <Info k="From ZIP" v={s.fromZip}/>
-                <Info k="Packages" v={`${s.pieces?.length||1} pkg ¬∑ ${s.weight} lb total`}/>
-                <Info k="Last scan" v={s.lastScan||"‚Äî"}/>
-                {s.intl&&<Info k="Customs" v={s.customs?`${s.customs.ci} ¬∑ declared ${money(s.customs.total)}`:"International"}/>}
+                <Info k="Packages" v={`${s.pieces?.length||1} pkg · ${s.weight} lb total`}/>
+                <Info k="Last scan" v={s.lastScan||"—"}/>
+                {s.intl&&<Info k="Customs" v={s.customs?`${s.customs.ci} · declared ${money(s.customs.total)}`:"International"}/>}
                 <Info k="Bill to" v={s.billTo==="third"?`Third-party ${s.thirdAcct||""}`:s.billTo}/>
                 <Info k="Your cost" v={money(s.cost)}/>
                 <Info k="Customer rate" v={money(s.sell)}/>
@@ -520,7 +540,7 @@ function Shipments({shipments,setShipments,goShip}){
   );
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê PICKUPS ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ PICKUPS ════════ */
 function Pickups({pickups,setPickups,settings}){
   const [f,setF]=useState({carrier:"FedEx",date:"",ready:"09:00",close:"17:00",count:1,location:"Front desk"});
   const add=()=>{ if(!f.date)return; setPickups(p=>[{id:Date.now(),conf:"PU"+rnd(7),...f},...p]); };
@@ -539,7 +559,7 @@ function Pickups({pickups,setPickups,settings}){
         {pickups.length===0?<Empty icon={Calendar} title="No pickups" body="Schedule one and it shows here."/>:pickups.map(p=>(
           <div key={p.id} className="border border-stone-200 rounded-lg bg-white p-3 flex items-center gap-3">
             <div className={`text-xs font-bold ${CARRIER_TINT[p.carrier]}`}>{p.carrier}</div>
-            <div className="flex-1"><div className="text-sm text-stone-800">{p.date} ¬∑ {p.count} pkg</div><div className="text-[11px] text-stone-400">{p.ready}‚Äì{p.close} ¬∑ {p.location}</div></div>
+            <div className="flex-1"><div className="text-sm text-stone-800">{p.date} · {p.count} pkg</div><div className="text-[11px] text-stone-400">{p.ready}–{p.close} · {p.location}</div></div>
             <div className="font-mono text-[11px] text-stone-400">{p.conf}</div>
             <button onClick={()=>setPickups(x=>x.filter(y=>y.id!==p.id))} className="text-stone-300 hover:text-rose-500"><Trash2 className="w-4 h-4"/></button>
           </div>
@@ -549,7 +569,7 @@ function Pickups({pickups,setPickups,settings}){
   );
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê QUICK QUOTE ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ QUICK QUOTE ════════ */
 function Quote(){
   const [s,setS]=useState({fromZip:"84003",toZip:"90210",weight:3,L:12,W:9,H:4,residential:true});
   const quotes=useMemo(()=>quoteRates(s).sort((a,b)=>a.cost-b.cost),[s]);
@@ -567,7 +587,7 @@ function Quote(){
   );
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê DASHBOARD ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ DASHBOARD ════════ */
 const TRACK_STAGES=["Label created","In transit","Out for delivery","Delivered"];
 function trackPct(s){if(s==="Delivered")return 100;if(s==="Out for delivery")return 75;if(s==="In transit")return 45;if(s==="Exception")return 45;return 12;}
 function Dashboard({shipments,orders,returns,goTab}){
@@ -593,7 +613,7 @@ function Dashboard({shipments,orders,returns,goTab}){
       </div>
 
       <div>
-        <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-semibold text-stone-700 flex items-center gap-2"><Truck className="w-4 h-4"/>Tracking</h3><button onClick={()=>goTab("shipments")} className="text-xs text-blue-600">View all ‚Üí</button></div>
+        <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-semibold text-stone-700 flex items-center gap-2"><Truck className="w-4 h-4"/>Tracking</h3><button onClick={()=>goTab("shipments")} className="text-xs text-blue-600">View all →</button></div>
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <Tile label="In transit" value={inTransit} Icon={Truck} onClick={()=>goTab("shipments")}/>
           <Tile label="Out for delivery" value={outForDel} Icon={MapPin} onClick={()=>goTab("shipments")}/>
@@ -612,7 +632,7 @@ function Dashboard({shipments,orders,returns,goTab}){
               <div key={s.id} className="px-4 py-3">
                 <div className="flex items-center gap-3">
                   <span className={`text-[11px] font-bold w-10 ${CARRIER_TINT[s.carrier]}`}>{s.carrier}</span>
-                  <div className="flex-1 min-w-0"><div className="text-sm text-stone-800 truncate">{s.recipient?.name} ¬∑ {s.recipient?.city}, {s.recipient?.state}</div><a href={TRACK_URL[s.carrier](s.tracking)} target="_blank" rel="noopener" className="text-[11px] text-blue-600 font-mono">{s.tracking}</a></div>
+                  <div className="flex-1 min-w-0"><div className="text-sm text-stone-800 truncate">{s.recipient?.name} · {s.recipient?.city}, {s.recipient?.state}</div><a href={TRACK_URL[s.carrier](s.tracking)} target="_blank" rel="noopener" className="text-[11px] text-blue-600 font-mono">{s.tracking}</a></div>
                   <Badge tone={exc?"rose":s.status==="Out for delivery"?"amber":"blue"}>{s.status}</Badge>
                 </div>
                 <div className="mt-2 flex items-center gap-2">
@@ -629,22 +649,22 @@ function Dashboard({shipments,orders,returns,goTab}){
             <div className="space-y-3">{carriers.map(([c,n])=>(<div key={c}><div className="flex justify-between text-xs mb-1"><span className={`font-semibold ${CARRIER_TINT[c]}`}>{c}</span><span className="text-stone-400">{n}</span></div><div className="h-2 bg-stone-100 rounded-full overflow-hidden"><div className="h-full bg-blue-600 rounded-full" style={{width:`${(n/a.count)*100}%`}}/></div></div>))}</div>
           </div>
           <div className="border border-stone-200 rounded-xl bg-white p-4">
-            <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-semibold text-stone-700">Volume ¬∑ 7 days</h3></div>
+            <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-semibold text-stone-700">Volume · 7 days</h3></div>
             <div className="flex items-end gap-2 h-24">{a.byDay.map((v,i)=>(<div key={i} className="flex-1 flex flex-col items-center gap-1"><div className="w-full bg-blue-100 rounded-t" style={{height:`${Math.max(4,(v/maxDay)*100)}%`}}/><span className="text-[10px] text-stone-400">{days[i]}</span></div>))}</div>
           </div>
         </div>
       </div>
 
       <div className="grid sm:grid-cols-3 gap-3">
-        <button onClick={()=>goTab("orders")} className="border border-stone-200 rounded-xl bg-white p-4 text-left hover:border-blue-200"><div className="flex items-center gap-2 text-blue-600"><ShoppingBag className="w-4 h-4"/><span className="font-semibold">{orders.filter(o=>o.status==="unfulfilled").length} orders to ship</span></div><div className="text-[11px] text-stone-400 mt-1">Open the queue ‚Üí</div></button>
-        <button onClick={()=>goTab("returns")} className="border border-stone-200 rounded-xl bg-white p-4 text-left hover:border-blue-200"><div className="flex items-center gap-2 text-blue-600"><Undo2 className="w-4 h-4"/><span className="font-semibold">{returns.length} open returns</span></div><div className="text-[11px] text-stone-400 mt-1">Manage RMAs ‚Üí</div></button>
-        <button onClick={()=>goTab("reports")} className="border border-stone-200 rounded-xl bg-white p-4 text-left hover:border-blue-200"><div className="flex items-center gap-2 text-blue-600"><TrendingUp className="w-4 h-4"/><span className="font-semibold">{money(a.avg)} avg / label</span></div><div className="text-[11px] text-stone-400 mt-1">Full reports ‚Üí</div></button>
+        <button onClick={()=>goTab("orders")} className="border border-stone-200 rounded-xl bg-white p-4 text-left hover:border-blue-200"><div className="flex items-center gap-2 text-blue-600"><ShoppingBag className="w-4 h-4"/><span className="font-semibold">{orders.filter(o=>o.status==="unfulfilled").length} orders to ship</span></div><div className="text-[11px] text-stone-400 mt-1">Open the queue →</div></button>
+        <button onClick={()=>goTab("returns")} className="border border-stone-200 rounded-xl bg-white p-4 text-left hover:border-blue-200"><div className="flex items-center gap-2 text-blue-600"><Undo2 className="w-4 h-4"/><span className="font-semibold">{returns.length} open returns</span></div><div className="text-[11px] text-stone-400 mt-1">Manage RMAs →</div></button>
+        <button onClick={()=>goTab("reports")} className="border border-stone-200 rounded-xl bg-white p-4 text-left hover:border-blue-200"><div className="flex items-center gap-2 text-blue-600"><TrendingUp className="w-4 h-4"/><span className="font-semibold">{money(a.avg)} avg / label</span></div><div className="text-[11px] text-stone-400 mt-1">Full reports →</div></button>
       </div>
     </div>
   );
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê BATCH ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ BATCH ════════ */
 function Batch({orders,setOrders,client,rules,onShipped}){
   const pool=orders.filter(o=>o.status==="unfulfilled");
   const [sel,setSel]=useState(()=>new Set());
@@ -664,7 +684,7 @@ function Batch({orders,setOrders,client,rules,onShipped}){
         <span className="text-sm text-stone-500">Rule</span>
         <select value={rule} onChange={e=>setRule(e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500"><option value="cheapest">Cheapest overall</option><option value="ground">Cheapest ground</option></select>
       </div>
-      {done>0&&<div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-700 flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/>Printed {done} labels ‚Äî orders moved to Shipments.</div>}
+      {done>0&&<div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-700 flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/>Printed {done} labels — orders moved to Shipments.</div>}
       <div className="border border-stone-200 rounded-lg overflow-hidden bg-white divide-y divide-stone-100">
         <div className="flex items-center gap-3 px-4 py-2 bg-stone-50 text-[11px] uppercase tracking-widest text-stone-400"><input type="checkbox" checked={sel.size===pool.length&&pool.length>0} onChange={all} className="accent-blue-600"/><div className="w-14">Order</div><div className="flex-1">Customer</div><div className="w-28 hidden sm:block">Service</div><div className="w-16 text-right">Cost</div><div className="w-16 text-right">Charge</div></div>
         {pool.length===0&&<div className="p-8 text-center text-sm text-stone-400">No unfulfilled orders to batch.</div>}
@@ -672,7 +692,7 @@ function Batch({orders,setOrders,client,rules,onShipped}){
           <label key={o.id} className={`flex items-center gap-3 px-4 py-3 cursor-pointer ${on?"bg-blue-50/50":"hover:bg-stone-50"}`}>
             <input type="checkbox" checked={on} onChange={()=>toggle(o.id)} className="accent-blue-600"/>
             <div className="w-14 font-semibold text-sm">{o.name}</div>
-            <div className="flex-1 min-w-0"><div className="text-sm truncate">{o.customer}</div><div className="text-[11px] text-stone-400">{o.city}, {o.state} ¬∑ {o.weight} lb</div></div>
+            <div className="flex-1 min-w-0"><div className="text-sm truncate">{o.customer}</div><div className="text-[11px] text-stone-400">{o.city}, {o.state} · {o.weight} lb</div></div>
             <div className="w-28 hidden sm:block text-xs text-stone-500 truncate">{q.label}</div>
             <div className="w-16 text-right font-mono text-xs text-stone-400">{money(q.cost)}</div>
             <div className="w-16 text-right font-mono text-sm">{money(q.sell)}</div>
@@ -691,7 +711,7 @@ function Batch({orders,setOrders,client,rules,onShipped}){
   );
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê RETURNS / RMA ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ RETURNS / RMA ════════ */
 function Returns({returns,setReturns,orders,settings,logEmail}){
   const [creating,setCreating]=useState(false);
   const [f,setF]=useState({customer:"",order:"",reason:"Wrong size",carrier:"FedEx"});
@@ -704,7 +724,7 @@ function Returns({returns,setReturns,orders,settings,logEmail}){
       {creating&&<Panel title="New return label">
         <div className="grid sm:grid-cols-2 gap-3">
           <Field label="Customer"><Input value={f.customer} onChange={e=>setF({...f,customer:e.target.value})} placeholder="Name"/></Field>
-          <Field label="Original order"><Select value={f.order} onChange={e=>setF({...f,order:e.target.value})}><option value="">‚Äî</option>{fulfilled.map(o=><option key={o.id} value={o.name}>{o.name} ¬∑ {o.customer}</option>)}</Select></Field>
+          <Field label="Original order"><Select value={f.order} onChange={e=>setF({...f,order:e.target.value})}><option value="">—</option>{fulfilled.map(o=><option key={o.id} value={o.name}>{o.name} · {o.customer}</option>)}</Select></Field>
           <Field label="Reason"><Select value={f.reason} onChange={e=>setF({...f,reason:e.target.value})}><option>Wrong size</option><option>Defective</option><option>Not as described</option><option>No longer wanted</option></Select></Field>
           <Field label="Return carrier"><Select value={f.carrier} onChange={e=>setF({...f,carrier:e.target.value})}><option>FedEx</option><option>UPS</option><option>USPS</option></Select></Field>
         </div>
@@ -715,7 +735,7 @@ function Returns({returns,setReturns,orders,settings,logEmail}){
         {returns.map(r=>(
           <div key={r.id} className="flex items-center gap-3 px-4 py-3 hover:bg-stone-50">
             <div className="w-24 font-mono text-sm font-semibold text-blue-600">{r.rma}</div>
-            <div className="flex-1 min-w-0"><div className="text-sm truncate">{r.customer}</div><div className="text-[11px] text-stone-400">{r.order?`${r.order} ¬∑ `:""}{r.reason}</div></div>
+            <div className="flex-1 min-w-0"><div className="text-sm truncate">{r.customer}</div><div className="text-[11px] text-stone-400">{r.order?`${r.order} · `:""}{r.reason}</div></div>
             <div className={`text-xs font-bold hidden sm:block ${CARRIER_TINT[r.carrier]}`}>{r.carrier}</div>
             <a href={TRACK_URL[r.carrier](r.tracking)} target="_blank" rel="noopener" className="text-blue-600 underline font-mono text-xs flex items-center gap-1 w-36 truncate">{r.tracking}<ExternalLink className="w-3 h-3 shrink-0"/></a>
             <Badge tone={tone(r.status)}>{r.status}</Badge>
@@ -726,7 +746,7 @@ function Returns({returns,setReturns,orders,settings,logEmail}){
   );
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê MANIFESTS (end of day) ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ MANIFESTS (end of day) ════════ */
 function Manifests({shipments,setShipments,manifests,setManifests}){
   const open=shipments.filter(s=>s.status==="Label created");
   const byCarrier={}; open.forEach(s=>byCarrier[s.carrier]=(byCarrier[s.carrier]||0)+1);
@@ -753,7 +773,7 @@ function Manifests({shipments,setShipments,manifests,setManifests}){
   );
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê REPORTS ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ REPORTS ════════ */
 function Reports({shipments}){
   const [range,setRange]=useState(30);
   const data=range===0?shipments:shipments.filter(s=>(s.dayAgo??0)<range);
@@ -783,7 +803,7 @@ function Stat2({label,v,tone}){return <div className="border border-stone-200 ro
 function ReportTable({title,head,rows}){return (<div className="border border-stone-200 rounded-lg bg-white overflow-hidden"><div className="px-4 py-2.5 text-sm font-semibold text-stone-700 border-b border-stone-100">{title}</div><table className="w-full text-sm"><thead><tr className="text-[11px] uppercase tracking-widest text-stone-400">{head.map(h=><th key={h} className="text-left font-normal px-4 py-2">{h}</th>)}</tr></thead><tbody>{rows.length===0?<tr><td colSpan={head.length} className="px-4 py-4 text-stone-400">No data.</td></tr>:rows.map((r,i)=><tr key={i} className="border-t border-stone-50">{r.map((c,j)=><td key={j} className="px-4 py-2 font-mono text-stone-700">{c}</td>)}</tr>)}</tbody></table></div>);}
 
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê CHECKOUT RATES (Shopify) ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ CHECKOUT RATES (Shopify) ════════ */
 const CHECKOUT_SERVICES=Object.keys(RATES).filter(k=>!RATES[k].intl&&RATES[k].carrier!=="DHL");
 function CheckoutRates({settings,setSettings,client}){
   const ck=settings.checkout||CHECKOUT_DEFAULTS;
@@ -811,12 +831,12 @@ function CheckoutRates({settings,setSettings,client}){
       <div className="space-y-4">
         <div>
           <h2 className="text-sm font-semibold text-stone-700 flex items-center gap-2 mb-1"><ShoppingBag className="w-4 h-4"/>Live checkout rates</h2>
-          <p className="text-sm text-stone-500">Show your marked-up carrier rates inside Shopify checkout. ShippingCloud answers Shopify's CarrierService callback in real time ‚Äî your margin is built in and invisible to the buyer.</p>
+          <p className="text-sm text-stone-500">Show your marked-up carrier rates inside Shopify checkout. ShippingCloud answers Shopify's CarrierService callback in real time — your margin is built in and invisible to the buyer.</p>
         </div>
         <div className="border border-stone-200 rounded-lg bg-white p-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded bg-stone-100 flex items-center justify-center"><ShoppingBag className="w-4 h-4 text-stone-600"/></div>
-            <div className="flex-1"><div className="font-medium">Shopify ¬∑ CarrierService</div><div className="text-[11px] text-stone-400 font-mono break-all">{endpoint}</div></div>
+            <div className="flex-1"><div className="font-medium">Shopify · CarrierService</div><div className="text-[11px] text-stone-400 font-mono break-all">{endpoint}</div></div>
             <Badge tone={ck.registered?"green":"stone"}>{ck.registered?"registered":"off"}</Badge>
           </div>
           <button onClick={()=>setCk({registered:!ck.registered})} className={`mt-3 text-sm rounded px-3 py-1.5 font-medium ${ck.registered?"bg-stone-200 text-stone-700 hover:bg-stone-300":"bg-stone-900 text-white hover:bg-stone-800"}`}>{ck.registered?"Disable at checkout":"Register carrier service"}</button>
@@ -847,8 +867,8 @@ function CheckoutRates({settings,setSettings,client}){
           <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-semibold text-stone-700 flex items-center gap-2"><Calculator className="w-4 h-4"/>Test cart</h3><div className="flex items-center gap-1.5 text-sm"><span className="text-stone-400">Ship to</span><input value={zip} onChange={e=>setZip(e.target.value)} className="w-20 bg-white border border-stone-200 rounded px-2 py-1 text-sm font-mono outline-none focus:border-blue-500"/></div></div>
           <div className="space-y-1.5">{CART_ITEMS.map((it,i)=>(
             <div key={i} className="flex items-center gap-3 text-sm">
-              <div className="flex-1"><span className="text-stone-800">{it.name}</span><span className="text-[11px] text-stone-400 ml-2 font-mono">{it.l}√ó{it.w}√ó{it.h} ¬∑ {it.wt}lb ¬∑ ${it.price}</span></div>
-              <button onClick={()=>setQty(i,-1)} className="w-6 h-6 rounded bg-stone-200 hover:bg-stone-300">‚Äì</button>
+              <div className="flex-1"><span className="text-stone-800">{it.name}</span><span className="text-[11px] text-stone-400 ml-2 font-mono">{it.l}×{it.w}×{it.h} · {it.wt}lb · ${it.price}</span></div>
+              <button onClick={()=>setQty(i,-1)} className="w-6 h-6 rounded bg-stone-200 hover:bg-stone-300">–</button>
               <span className="w-6 text-center font-mono">{cart[i]||0}</span>
               <button onClick={()=>setQty(i,1)} className="w-6 h-6 rounded bg-stone-200 hover:bg-stone-300">+</button>
             </div>
@@ -858,20 +878,20 @@ function CheckoutRates({settings,setSettings,client}){
         {pack&&(
           <div className="border border-blue-200 bg-blue-50/50 rounded-lg p-3 flex items-center gap-3">
             <Boxes className="w-5 h-5 text-blue-600"/>
-            <div className="flex-1 text-sm"><div className="font-medium text-stone-800">Box logic picked: {pack.box.name}{pack.count>1?` √ó${pack.count}`:""}</div><div className="text-[11px] text-stone-500">{pack.box.L}√ó{pack.box.W}√ó{pack.box.H} in ¬∑ billable {pack.billWt} lb ¬∑ {pack.reason}</div></div>
+            <div className="flex-1 text-sm"><div className="font-medium text-stone-800">Box logic picked: {pack.box.name}{pack.count>1?` ×${pack.count}`:""}</div><div className="text-[11px] text-stone-500">{pack.box.L}×{pack.box.W}×{pack.box.H} in · billable {pack.billWt} lb · {pack.reason}</div></div>
           </div>
         )}
 
         {/* SHOPIFY CHECKOUT MOCK */}
         <div className="border border-stone-300 rounded-xl bg-white overflow-hidden shadow-sm">
-          <div className="bg-stone-900 text-white px-4 py-2.5 text-sm font-medium flex items-center justify-between"><span>Shopify checkout ¬∑ Shipping method</span><span className="text-[11px] text-stone-300">buyer view</span></div>
+          <div className="bg-stone-900 text-white px-4 py-2.5 text-sm font-medium flex items-center justify-between"><span>Shopify checkout · Shipping method</span><span className="text-[11px] text-stone-300">buyer view</span></div>
           <div className="p-4 space-y-2">
             {items.length===0?<div className="text-sm text-stone-400 text-center py-6">Add items to the cart to preview rates.</div>:display.length===0?<div className="text-sm text-stone-400 text-center py-6">No services enabled. Toggle some on the left.</div>:display.map((q,idx)=>{
               const isFree=free&&idx===0;
               return (
                 <label key={q.key} className={`flex items-center gap-3 border rounded-lg px-3 py-2.5 cursor-pointer ${idx===0?"border-stone-900":"border-stone-200"}`}>
                   <span className={`w-4 h-4 rounded-full border-2 ${idx===0?"border-stone-900 bg-stone-900":"border-stone-300"}`}/>
-                  <div className="flex-1"><div className="text-sm font-medium text-stone-800">{q.shown}</div><div className="text-[11px] text-stone-400">{q.minDays===q.maxDays?`${q.minDays} business day${q.minDays>1?"s":""}`:`${q.minDays}‚Äì${q.maxDays} business days`}</div></div>
+                  <div className="flex-1"><div className="text-sm font-medium text-stone-800">{q.shown}</div><div className="text-[11px] text-stone-400">{q.minDays===q.maxDays?`${q.minDays} business day${q.minDays>1?"s":""}`:`${q.minDays}–${q.maxDays} business days`}</div></div>
                   <div className="font-mono text-sm font-semibold">{isFree?<span className="text-emerald-600">FREE</span>:money(q.buyer)}</div>
                 </label>
               );
@@ -879,13 +899,13 @@ function CheckoutRates({settings,setSettings,client}){
           </div>
           <div className="border-t border-stone-100 px-4 py-2.5 flex justify-between text-sm"><span className="text-stone-500">Cart subtotal</span><span className="font-mono">{money(subtotal)}</span></div>
         </div>
-        <p className="text-[11px] text-stone-400">Buyers see only the final price above. Your cost and the markup that funds it stay hidden ‚Äî that spread is your revenue on every order.</p>
+        <p className="text-[11px] text-stone-400">Buyers see only the final price above. Your cost and the markup that funds it stay hidden — that spread is your revenue on every order.</p>
       </div>
     </div>
   );
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê SETTINGS ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ SETTINGS ════════ */
 function Settings({settings,setSettings,accounts,setAccounts,clients,setClients,rules,setRules,emails}){
   const [sec,setSec]=useState("carriers");
   const secs=[["carriers","Carriers & accounts",Plug],["integrations","Integrations",ShoppingBag],["boxes","Boxes & packaging",Boxes],["automation","Automation rules",Zap],["notifications","Email automation",Mail],["clients","Clients & markup",Users],["billing","Billing",CreditCard],["addresses","Address book",MapPin],["company","Company",Building2]];
@@ -912,13 +932,13 @@ function BoxesSettings({settings,setSettings}){
   const add=()=>{if(!n.name)return;setSettings({...settings,boxes:[...boxes,{id:"bx"+Date.now(),name:n.name,L:+n.L||1,W:+n.W||1,H:+n.H||1,maxWt:+n.maxWt||50,empty:+n.empty||0.3}]});setN({name:"",L:"",W:"",H:"",maxWt:"",empty:""});};
   const del=(id)=>setSettings({...settings,boxes:boxes.filter(b=>b.id!==id)});
   return (<div className="max-w-2xl space-y-3">
-    <p className="text-sm text-stone-500">Your box catalog. ShippingCloud's box logic auto-picks the smallest box that fits each order ‚Äî used on the Ship tab and for live Shopify checkout rates.</p>
+    <p className="text-sm text-stone-500">Your box catalog. ShippingCloud's box logic auto-picks the smallest box that fits each order — used on the Ship tab and for live Shopify checkout rates.</p>
     <div className="border border-stone-200 rounded-lg bg-white overflow-hidden">
       <div className="flex items-center gap-3 px-4 py-2 bg-stone-50 text-[11px] uppercase tracking-widest text-stone-400"><div className="flex-1">Box</div><div className="w-28">Dimensions</div><div className="w-16 text-right">Max wt</div><div className="w-16 text-right">Empty</div><div className="w-6"/></div>
       <div className="divide-y divide-stone-100">{boxes.map(b=>(
         <div key={b.id} className="flex items-center gap-3 px-4 py-2.5">
           <div className="flex-1 text-sm font-medium">{b.name}</div>
-          <div className="w-28 font-mono text-xs text-stone-500">{b.L}√ó{b.W}√ó{b.H} in</div>
+          <div className="w-28 font-mono text-xs text-stone-500">{b.L}×{b.W}×{b.H} in</div>
           <div className="w-16 text-right font-mono text-sm">{b.maxWt} lb</div>
           <div className="w-16 text-right font-mono text-xs text-stone-400">{b.empty} lb</div>
           <button onClick={()=>del(b.id)} className="text-stone-300 hover:text-rose-500 w-6"><Trash2 className="w-4 h-4"/></button>
@@ -942,7 +962,7 @@ function Notifications({settings,setSettings,emails}){
   const items=[["orderConfirm","Order confirmation","Sent to the customer when an order is placed"],["shipped","Shipment confirmation","Tracking link emailed when a label prints"],["delivered","Delivered notice","Sent when the carrier marks delivered"],["returnLabel","Return label","Emailed when an RMA label is created"],["exception","Delivery exception alert","Internal alert when a shipment hits a delivery exception"]];
   const toggle=k=>setSettings({...settings,notify:{...N,[k]:!N[k]}});
   return (<div className="space-y-4 max-w-2xl">
-    <p className="text-sm text-stone-500">Automated emails fire on shipping & warehouse events. Toggle what sends ‚Äî the log below records every send.</p>
+    <p className="text-sm text-stone-500">Automated emails fire on shipping & warehouse events. Toggle what sends — the log below records every send.</p>
     <div className="border border-stone-200 rounded-lg bg-white divide-y divide-stone-100">
       {items.map(([k,l,d])=>(<div key={k} className="flex items-center gap-3 px-4 py-3"><div className="flex-1"><div className="text-sm font-medium">{l}</div><div className="text-[11px] text-stone-400">{d}</div></div><button onClick={()=>toggle(k)}><span className={`w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${N[k]?"bg-blue-600 justify-end":"bg-stone-300 justify-start"}`}><span className="w-4 h-4 bg-white rounded-full"/></span></button></div>))}
     </div>
@@ -950,27 +970,27 @@ function Notifications({settings,setSettings,emails}){
       <div className="text-xs font-semibold uppercase tracking-widest text-stone-500 mb-2 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5"/>Email log</div>
       <div className="border border-stone-200 rounded-lg bg-white divide-y divide-stone-100">
         {(!emails||emails.length===0)?<div className="p-6 text-center text-sm text-stone-400">No emails sent yet.</div>:emails.map(e=>(
-          <div key={e.id} className="flex items-center gap-3 px-4 py-2.5"><Mail className="w-4 h-4 text-stone-300"/><div className="flex-1 min-w-0"><div className="text-sm truncate">{e.subject}</div><div className="text-[11px] text-stone-400">to {e.to} ¬∑ {e.date}</div></div><Badge tone="green">{e.type}</Badge></div>
+          <div key={e.id} className="flex items-center gap-3 px-4 py-2.5"><Mail className="w-4 h-4 text-stone-300"/><div className="flex-1 min-w-0"><div className="text-sm truncate">{e.subject}</div><div className="text-[11px] text-stone-400">to {e.to} · {e.date}</div></div><Badge tone="green">{e.type}</Badge></div>
         ))}
       </div>
     </div>
   </div>);
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê SETTINGS-SUB ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ SETTINGS-SUB ════════ */
 function AutomationRules({rules,setRules}){
   const [f,setF]=useState({name:"",field:"weight",op:">",value:"",action:"service",actionValue:""});
   const add=()=>{if(!f.name)return;setRules(r=>[...r,{id:"r"+Date.now(),enabled:true,...f}]);setF({name:"",field:"weight",op:">",value:"",action:"service",actionValue:""});};
-  const labelFor=r=>`If ${r.field} ${r.op} ${r.value} ‚Üí ${r.action}${r.actionValue?`: ${r.actionValue}`:""}`;
+  const labelFor=r=>`If ${r.field} ${r.op} ${r.value} → ${r.action}${r.actionValue?`: ${r.actionValue}`:""}`;
   return (<div className="max-w-2xl space-y-3">
-    <p className="text-sm text-stone-500">Rules run automatically on imported orders and in Batch ‚Äî auto-pick services, force signature, flag oversize, and more.</p>
+    <p className="text-sm text-stone-500">Rules run automatically on imported orders and in Batch — auto-pick services, force signature, flag oversize, and more.</p>
     {rules.map(r=>(<div key={r.id} className="border border-stone-200 rounded-lg bg-white p-3 flex items-center gap-3">
       <button onClick={()=>setRules(rs=>rs.map(x=>x.id===r.id?{...x,enabled:!x.enabled}:x))}><span className={`w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${r.enabled?"bg-blue-600 justify-end":"bg-stone-300 justify-start"}`}><span className="w-4 h-4 bg-white rounded-full"/></span></button>
       <div className="flex-1"><div className="font-medium text-sm flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-blue-600"/>{r.name}</div><div className="text-[11px] text-stone-400 font-mono">{labelFor(r)}</div></div>
       <button onClick={()=>setRules(rs=>rs.filter(x=>x.id!==r.id))} className="text-stone-300 hover:text-rose-500"><Trash2 className="w-4 h-4"/></button>
     </div>))}
     <Panel title="New rule">
-      <Field label="Rule name"><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})} placeholder="e.g. West coast ‚Üí Ground"/></Field>
+      <Field label="Rule name"><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})} placeholder="e.g. West coast → Ground"/></Field>
       <div className="grid grid-cols-3 gap-2 items-end">
         <Field label="When"><Select value={f.field} onChange={e=>setF({...f,field:e.target.value})}><option value="weight">Weight (lb)</option><option value="value">Order value ($)</option><option value="state">Dest. state</option><option value="zip">Dest. ZIP</option></Select></Field>
         <Field label="Is"><Select value={f.op} onChange={e=>setF({...f,op:e.target.value})}><option>{">"}</option><option>{"<"}</option><option>{"="}</option></Select></Field>
@@ -1044,8 +1064,8 @@ function Company({settings,setSettings}){
   </div>);
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê ACCOUNTS (carriers) ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
-const PROVIDERS=[{id:"england",name:"England Logistics API"},{id:"fedex",name:"FedEx ¬∑ direct"},{id:"ups",name:"UPS ¬∑ direct"}];
+/* ════════ ACCOUNTS (carriers) ════════ */
+const PROVIDERS=[{id:"england",name:"England Logistics API"},{id:"fedex",name:"FedEx · direct"},{id:"ups",name:"UPS · direct"}];
 function Accounts({accounts,setAccounts}){
   const [adding,setAdding]=useState(false);
   const [d,setD]=useState({label:"",provider:"england",account:"",apiKey:"",secret:"",customerId:""});
@@ -1062,7 +1082,7 @@ function Accounts({accounts,setAccounts}){
     </Panel>}
     {accounts.map(a=>(<div key={a.id} className="border border-stone-200 rounded-lg bg-white p-4 flex items-center gap-3">
       <div className="w-9 h-9 rounded bg-blue-50 text-blue-600 flex items-center justify-center"><Wifi className="w-4 h-4"/></div>
-      <div className="flex-1"><div className="font-medium">{a.label||a.provider}</div><div className="text-[11px] text-stone-400 font-mono">{(PROVIDERS.find(p=>p.id===a.provider)||{}).name}{a.account?` ¬∑ ${a.account}`:""}</div></div>
+      <div className="flex-1"><div className="font-medium">{a.label||a.provider}</div><div className="text-[11px] text-stone-400 font-mono">{(PROVIDERS.find(p=>p.id===a.provider)||{}).name}{a.account?` · ${a.account}`:""}</div></div>
       <Badge tone="amber">{a.mode}</Badge>
       <button onClick={()=>setAccounts(x=>x.filter(y=>y.id!==a.id))} className="text-stone-300 hover:text-rose-500"><Trash2 className="w-4 h-4"/></button>
     </div>))}
@@ -1071,11 +1091,11 @@ function Accounts({accounts,setAccounts}){
 function Clients({clients,setClients}){
   const set=(id,v)=>setClients(cs=>cs.map(c=>c.id===id?{...c,markup:Math.max(0,v)}:c));
   return (<div className="space-y-3 max-w-2xl"><p className="text-sm text-stone-500">Markup is your cut on every label this client ships. Customers never see it.</p>
-    {clients.map(c=>(<div key={c.id} className="border border-stone-200 rounded-lg bg-white p-4 flex items-center gap-4"><div className="w-9 h-9 rounded bg-stone-100 flex items-center justify-center text-blue-600 font-semibold">{c.name[0]}</div><div className="flex-1"><div className="font-medium">{c.name}</div><div className="text-[11px] text-stone-400 font-mono">origin {c.origin}</div></div><button onClick={()=>set(c.id,c.markup-1)} className="w-7 h-7 rounded bg-stone-200 hover:bg-stone-300">‚Äì</button><div className="w-14 text-center font-mono text-blue-600 font-semibold">{c.markup}%</div><button onClick={()=>set(c.id,c.markup+1)} className="w-7 h-7 rounded bg-stone-200 hover:bg-stone-300">+</button></div>))}
+    {clients.map(c=>(<div key={c.id} className="border border-stone-200 rounded-lg bg-white p-4 flex items-center gap-4"><div className="w-9 h-9 rounded bg-stone-100 flex items-center justify-center text-blue-600 font-semibold">{c.name[0]}</div><div className="flex-1"><div className="font-medium">{c.name}</div><div className="text-[11px] text-stone-400 font-mono">origin {c.origin}</div></div><button onClick={()=>set(c.id,c.markup-1)} className="w-7 h-7 rounded bg-stone-200 hover:bg-stone-300">–</button><div className="w-14 text-center font-mono text-blue-600 font-semibold">{c.markup}%</div><button onClick={()=>set(c.id,c.markup+1)} className="w-7 h-7 rounded bg-stone-200 hover:bg-stone-300">+</button></div>))}
   </div>);
 }
 
-/* ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê PRIMITIVES ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê */
+/* ════════ PRIMITIVES ════════ */
 function AddressCard({title,data,set,required,residential,setResidential}){
   const f=(k,v)=>set({...data,[k]:v});
   const Cell=({label,k,span,req})=>(<div className={`px-2 py-1.5 ${req&&!data[k]?"bg-blue-50":"bg-white"} ${span||""}`}><div className={`text-[9px] uppercase tracking-wide ${req&&!data[k]?"text-blue-600":"text-stone-400"}`}>{label}</div>{k==="country"?<select value={data.country||"United States"} onChange={e=>f("country",e.target.value)} className="w-full bg-transparent text-[13px] text-stone-900 outline-none mt-0.5">{COUNTRIES.map(c=><option key={c}>{c}</option>)}</select>:<input value={data[k]||""} onChange={e=>f(k,e.target.value)} className="w-full bg-transparent text-[13px] text-stone-900 outline-none mt-0.5 placeholder-stone-300"/>}</div>);
@@ -1094,4 +1114,3 @@ function Badge({children,tone="stone"}){const t={stone:"bg-stone-100 text-stone-
 function Empty({icon:Icon,title,body}){return <div className="border border-dashed border-stone-300 rounded-lg p-12 text-center"><Icon className="w-8 h-8 text-stone-300 mx-auto mb-3"/><div className="text-stone-700 font-medium">{title}</div><div className="text-sm text-stone-400 mt-1 max-w-sm mx-auto">{body}</div></div>;}
 function EditField({label,v,on}){return <label className="block"><span className="text-[10px] uppercase tracking-wide text-stone-400">{label}</span><input value={v} onChange={e=>on(e.target.value)} className="w-full bg-white border border-stone-200 rounded px-2 py-1 text-sm mt-0.5 outline-none focus:border-blue-500"/></label>;}
 function Info({k,v}){return <div className="flex justify-between gap-4 py-0.5 border-b border-stone-100"><span className="text-stone-400">{k}</span><span className="text-stone-800 text-right">{v}</span></div>;}
-
