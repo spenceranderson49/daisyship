@@ -560,6 +560,7 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
   const [pieces,setPieces]=useState([{weight:3,L:12,W:9,H:4}]);
   const [insurance,setInsurance]=useState("");
   const [residential,setRes]=useState(true);
+  const [resTouched,setResTouched]=useState(false);
   const [signature,setSig]=useState(false);
   const [sigOption,setSigOption]=useState("none");
   const [orderSort,setOrderSort]=useState("date");
@@ -594,16 +595,17 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
     const t=setTimeout(async()=>{
       const res=await fedexValidateAddress(receiver);
       if(cancel)return;
-      if(res&&res.ok&&res.classification&&res.classification!=="UNKNOWN"){
-        const type=res.classification==="BUSINESS"?"Commercial":(res.classification==="RESIDENTIAL"?"Residential":"Mixed");
+      if(res&&res.ok&&(res.classification==="RESIDENTIAL"||res.classification==="BUSINESS")){
+        const type=res.classification==="BUSINESS"?"Commercial":"Residential";
         setVerify({ok:res.deliverable!==false,type,classification:res.classification,source:"FedEx"});
-        if(type!=="Mixed") setRes(type==="Residential");
+        if(!resTouched) setRes(type==="Residential");   // don't override a manual choice
+      } else if(res&&res.ok){
+        // FedEx resolved the address but couldn't classify res/commercial (common) — verify deliverability only, let the toggle decide
+        setVerify({ok:res.deliverable!==false,type:null,classification:res.classification||"UNKNOWN",source:"FedEx",unclassified:true});
       } else {
-        // fall back to local heuristic if FedEx can't classify
+        // couldn't reach FedEx — basic local check, no res/commercial guess
         const r=validateAddress(receiver);
-        const type=(receiver.company&&receiver.company.trim())?"Commercial":"Residential";
-        setVerify({ok:r.ok,issues:r.issues,type,source:res&&res.error?"estimate":""});
-        setRes(type==="Residential");
+        setVerify({ok:r.ok,issues:r.issues,type:null,unclassified:true,source:res&&res.error?"error":""});
       }
     },700);
     return ()=>{cancel=true;clearTimeout(t);};
@@ -673,7 +675,7 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
     return String(b.id).localeCompare(String(a.id));
   });},[orders,orderSort]);
   const saveDraft=()=>{const d={id:Date.now(),label:reference||receiver.name||receiver.city||"Untitled",when:new Date().toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}),to:`${receiver.city||""}${receiver.state?", "+receiver.state:""}`,snap:{sender,receiver,reference,invoiceNo,poNo,pieces,residential,signature,billTo,thirdAcct,insurance,selectedOrder,customs}};setDrafts(p=>[d,...p]);setSaved(true);setTimeout(()=>setSaved(false),1600);};
-  const newShipment=()=>{setReceiver({...empty,zip:""});setReference("");setInvoiceNo("");setPoNo("");setPieces([{weight:3,L:12,W:9,H:4}]);setInsurance("");setRes(true);setSig(false);setSigOption("none");setBillTo(settings.defaultBillTo||"sender");setThirdAcct("");setSelectedOrder(null);setVerify(null);setBought(null);setEmailTo("");setReturnDiff(false);};
+  const newShipment=()=>{setReceiver({...empty,zip:""});setReference("");setInvoiceNo("");setPoNo("");setPieces([{weight:3,L:12,W:9,H:4}]);setInsurance("");setRes(true);setResTouched(false);setSig(false);setSigOption("none");setBillTo(settings.defaultBillTo||"sender");setThirdAcct("");setSelectedOrder(null);setVerify(null);setBought(null);setEmailTo("");setReturnDiff(false);};
   return (
     <div className="flex flex-col lg:flex-row gap-4">
       <aside className="lg:w-64 shrink-0 space-y-2">
@@ -708,7 +710,7 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
         <div className="relative grid lg:grid-cols-2 gap-4">
           <AddressCard title="Sender" data={sender} set={setSender} addresses={settings.addresses}/>
           <button onClick={swap} title="Swap" className="hidden lg:flex absolute left-1/2 top-6 -translate-x-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-stone-200 border border-stone-300 hover:bg-stone-300 text-stone-700"><ArrowLeftRight className="w-4 h-4"/></button>
-          <AddressCard title="Receiver" data={receiver} set={setReceiver} required residential={residential} setResidential={setRes} addresses={settings.addresses}/>
+          <AddressCard title="Receiver" data={receiver} set={setReceiver} required residential={residential} setResidential={(v)=>{setResTouched(true);setRes(v);}} addresses={settings.addresses}/>
         </div>
         {intl&&<div className="flex items-center gap-2 text-sm text-[#006FBF] bg-[#E6F4FF] border border-[#99D6FF] rounded-lg px-3 py-2"><MapPin className="w-4 h-4"/>International shipment to <b>{receiver.country}</b> — FedEx &amp; DHL rates shown, customs info required below.</div>}
         <div className="flex flex-wrap items-center gap-3 text-xs">
@@ -717,7 +719,8 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
             :(verify.ok
               ?<span className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 font-medium"><CheckCircle2 className="w-3.5 h-3.5"/>{verify.source==="FedEx"?"FedEx-verified address":"Address verified"}</span>
               :<span className="flex items-center gap-1.5 text-[#0086E0] bg-[#E6F4FF] border border-[#99D6FF] rounded-full px-2.5 py-1 font-medium"><AlertTriangle className="w-3.5 h-3.5"/>{verify.issues?verify.issues.join(" · "):"Address may be undeliverable"}</span>)}
-          {verify&&!verify.loading&&<span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border ${verify.type==="Residential"?"text-[#006FBF] bg-[#E6F4FF] border-[#99D6FF]":verify.type==="Mixed"?"text-amber-700 bg-amber-50 border-amber-200":"text-stone-700 bg-stone-100 border-stone-200"}`}>{verify.type==="Residential"?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{verify.type}{verify.source==="FedEx"?" · FedEx":""}</span>}
+          {verify&&!verify.loading&&verify.type&&<span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border ${verify.type==="Residential"?"text-[#006FBF] bg-[#E6F4FF] border-[#99D6FF]":"text-stone-700 bg-stone-100 border-stone-200"}`}>{verify.type==="Residential"?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{verify.type}{verify.source==="FedEx"?" · FedEx":""}</span>}
+          {verify&&!verify.loading&&!verify.type&&verify.unclassified&&<span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border text-stone-500 bg-stone-50 border-stone-200">{residential?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{residential?"Residential":"Commercial"} · set manually</span>}
         </div>
 
         <div className="bg-stone-100 border border-stone-200 rounded-lg p-3 space-y-2">
