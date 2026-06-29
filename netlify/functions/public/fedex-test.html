@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>FedEx Diagnostic — ShippingCloud</title>
+<style>
+  body{font-family:ui-sans-serif,system-ui,sans-serif;max-width:760px;margin:0 auto;padding:24px;color:#111418;background:#f5f5f4}
+  h1{font-size:20px} h2{font-size:15px;margin:18px 0 6px}
+  .card{background:#fff;border:1px solid #e7e5e4;border-radius:12px;padding:16px;margin:14px 0}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#78716c;margin:8px 0 2px}
+  input{width:100%;box-sizing:border-box;padding:8px;border:1px solid #d6d3d1;border-radius:8px;font-size:14px}
+  .row{display:flex;gap:8px}.row>div{flex:1}
+  button{margin-top:12px;background:#0099FF;color:#fff;border:0;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.5}
+  pre{background:#0b1020;color:#d1e9ff;padding:14px;border-radius:10px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-word}
+  .ok{color:#15803d;font-weight:600}.bad{color:#be123c;font-weight:600}
+  .big{font-size:18px;font-weight:700;margin:6px 0}
+</style>
+</head>
+<body>
+  <h1>FedEx Diagnostic</h1>
+  <p style="color:#57534e;font-size:14px">This page calls your live FedEx function and shows exactly what FedEx returns. Fill in an address, tap a button, read the result. Nothing is saved.</p>
+
+  <div class="card">
+    <h2>Receiver address to test</h2>
+    <label>Street</label><input id="a1" value="1188 W Sportsplex Dr"/>
+    <div class="row">
+      <div><label>City</label><input id="city" value="Kaysville"/></div>
+      <div><label>State</label><input id="state" value="UT"/></div>
+      <div><label>ZIP</label><input id="zip" value="84037"/></div>
+    </div>
+    <label>Ship-from ZIP (your origin)</label><input id="from" value="84003"/>
+    <label>Weight (lb)</label><input id="wt" value="3"/>
+    <button id="goAddr">Test address classification</button>
+    <button id="goTransit" style="background:#111418">Test transit times</button>
+  </div>
+
+  <div id="summary"></div>
+  <h2>Raw response</h2>
+  <pre id="out">Tap a button above…</pre>
+
+<script>
+const $=id=>document.getElementById(id);
+function addr(){return{address1:$('a1').value,city:$('city').value,state:$('state').value,zip:$('zip').value};}
+async function call(body){
+  $('out').textContent='Calling FedEx…';$('summary').innerHTML='';
+  try{
+    const r=await fetch('/.netlify/functions/fedex',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    $('out').textContent=JSON.stringify(d,null,2);
+    return d;
+  }catch(e){$('out').textContent='ERROR: '+e.message;return null;}
+}
+$('goAddr').onclick=async()=>{
+  const d=await call({action:'address',fromZip:$('from').value,address:addr()});
+  if(!d)return;
+  let h='';
+  if(d.error){h='<div class="card"><div class="bad">Function error</div><div>'+d.error+'</div></div>';}
+  else{
+    const cls=d.classification||'UNKNOWN';
+    h='<div class="card"><div class="big">Result: <span class="'+(cls==='UNKNOWN'?'bad':'ok')+'">'+cls+'</span></div>'+
+      '<div>FedEx address-API said: <b>'+(d.validationClassification||'null / unknown')+'</b></div>'+
+      '<div>Decided via: <b>'+(d.source||'?')+'</b></div>'+
+      (d.rateDebug?('<div>Rate API services seen: <b>'+((d.rateDebug.services&&d.rateDebug.services.join(', '))||'(none)')+'</b></div>'+
+       (d.rateDebug.error?'<div class="bad">Rate API error: '+d.rateDebug.error+'</div>':'')):'')+
+      '</div>';
+  }
+  $('summary').innerHTML=h;
+};
+$('goTransit').onclick=async()=>{
+  const d=await call({fromZip:$('from').value,toZip:$('zip').value,weight:Number($('wt').value)||1});
+  if(!d)return;
+  let h='';
+  if(d.error){h='<div class="card"><div class="bad">Function error</div><div>'+d.error+'</div></div>';}
+  else if(d.services&&d.services.length){
+    h='<div class="card"><div class="big ok">'+d.services.length+' services returned</div>'+
+      d.services.map(s=>'<div>'+s.serviceType+' — '+(s.transitDays!=null?s.transitDays+' day(s)':'no days')+(s.deliveryDate?', arrives '+s.deliveryDate:', no date')+'</div>').join('')+'</div>';
+  }else{
+    h='<div class="card"><div class="bad">FedEx returned 0 services</div><div>This is why transit times are blank.</div></div>';
+  }
+  $('summary').innerHTML=h;
+};
+</script>
+</body>
+</html>
