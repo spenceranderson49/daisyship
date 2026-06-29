@@ -116,7 +116,7 @@ exports.handler = async (event) => {
         city: S(o.receiver.city), state: two(o.receiver.state), zip: S(o.receiver.zip), country: two(o.receiver.country || "US"),
         phone: S(o.receiver.phone), email: S(o.receiver.email),
       },
-      items: Array.isArray(o.items) && o.items.length ? o.items : [{ title: S(o.contentDescription || "Merchandise"), quantity: 1 }],
+      items: (Array.isArray(o.items) && o.items.length && o.items.every((it) => it && it.productId && it.sku && it.lineId)) ? o.items : null,
       packages: pieces.map((p) => ({ weight: S(+p.weight || 1), length: S(+p.length || +p.L || 12), width: S(+p.width || +p.W || 9), height: S(+p.height || +p.H || 4), insuranceAmount: o.insuranceAmount ? Number(o.insuranceAmount) : null, declaredValue: null })),
     };
     if (o.signatureOption && o.signatureOption !== "none") payload.signatureOptionCode = String(o.signatureOption);
