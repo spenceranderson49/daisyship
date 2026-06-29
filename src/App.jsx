@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { Package, Truck, Users, Plug, Plus, Check, X, ChevronRight, ChevronDown, Wifi, WifiOff, Loader2, Trash2, ShoppingBag, ArrowLeftRight, Search, Calendar, Settings as Cog, Calculator, ExternalLink, Edit3, RotateCcw, MapPin, Printer, Building2, CreditCard, BarChart3, Layers, FileText, Undo2, Zap, Download, Boxes, CheckCircle2, AlertTriangle, TrendingUp, ShieldCheck, Mail, Cloud, Receipt, Wallet, Upload, Star, Send, Home, BookUser, DollarSign } from "lucide-react";
+import { Package, Truck, Users, Plug, Plus, Check, X, ChevronRight, ChevronDown, Wifi, WifiOff, Loader2, Trash2, ShoppingBag, ArrowLeftRight, Search, Calendar, Settings as Cog, Calculator, ExternalLink, Edit3, RotateCcw, MapPin, Printer, Building2, CreditCard, BarChart3, Layers, FileText, Undo2, Zap, Download, Boxes, CheckCircle2, AlertTriangle, TrendingUp, ShieldCheck, Mail, Cloud, Receipt, Wallet, Upload, Star, Send, Home, BookUser, DollarSign, ScanLine } from "lucide-react";
 
 
 /* ════════ RATE ENGINE (demo) ════════ */
@@ -272,7 +272,7 @@ export default function App(){
     addLedger({type:"Shipping charge",ref:rec.reference||rec.tracking,amount:-(rec.sell||0)});
   };
 
-  const TABS=[["ship","Ship",Package],["dashboard","Dashboard",BarChart3],["orders","Orders",ShoppingBag],["batch","Batch",Layers],["shipments","Shipments",Truck],["drafts","Drafts",FileText],["returns","Returns",Undo2],["pickups","Pickups",Calendar],["invoices","Invoices",Receipt],["ledger","Ledger",Wallet],["addresses","Address Book",BookUser],["settings","Settings",Cog]];
+  const TABS=[["ship","Ship",Package],["orders","Orders",ShoppingBag],["batch","Batch",Layers],["scan","Scan",ScanLine],["shipments","Shipments",Truck],["drafts","Drafts",FileText],["returns","Returns",Undo2],["pickups","Pickups",Calendar],["invoices","Invoices",Receipt],["ledger","Ledger",Wallet],["addresses","Address Book",BookUser],["dashboard","Dashboard",BarChart3],["settings","Settings",Cog]];
   const unfulfilled=orders.filter(o=>o.status==="unfulfilled").length;
 
   return (
@@ -282,7 +282,6 @@ export default function App(){
           <span className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center"><Cloud className="w-5 h-5 text-blue-600"/></span>
           <span className="font-extrabold tracking-tight text-[17px]">Shipping<span className="text-blue-600">Cloud</span></span>
           <div className="flex-1"/>
-          <button onClick={()=>setQQ(true)} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded-lg px-3 py-2 font-medium hover:bg-stone-800"><Calculator className="w-4 h-4"/>Quick quote</button>
         </div>
       </header>
       {qq&&<QuickQuote onClose={()=>setQQ(false)} client={client} england={settings.england}/>}
@@ -298,7 +297,8 @@ export default function App(){
         </aside>
         <main className="flex-1 min-w-0 px-4 sm:px-6 py-6">
           {tab==="dashboard"&&<Dashboard shipments={shipments} orders={orders} returns={returns} goTab={setTab}/>}
-          {tab==="ship"&&<Ship client={client} accounts={accounts} orders={orders} settings={settings} rules={rules} drafts={drafts} setDrafts={setDrafts} prefill={prefill} clearPrefill={()=>setPrefill(null)} onShipped={onShipped} logEmail={logEmail}/>}
+          {tab==="ship"&&<Ship client={client} accounts={accounts} orders={orders} settings={settings} rules={rules} drafts={drafts} setDrafts={setDrafts} prefill={prefill} clearPrefill={()=>setPrefill(null)} onShipped={onShipped} logEmail={logEmail} onQuickQuote={()=>setQQ(true)}/>}
+          {tab==="scan"&&<Scan orders={orders} goShip={goShip} goTab={setTab}/>}
           {tab==="orders"&&<Orders orders={orders} setOrders={setOrders} goShip={goShip} client={client} settings={settings} onShipped={onShipped}/>}
           {tab==="batch"&&<Batch orders={orders} setOrders={setOrders} client={client} rules={rules} onShipped={onShipped}/>}
           {tab==="shipments"&&<Shipments shipments={shipments} setShipments={setShipments} goShip={goShip}/>}
@@ -316,7 +316,7 @@ export default function App(){
 }
 
 /* ════════ SHIP ════════ */
-function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,clearPrefill,onShipped,logEmail}){
+function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,clearPrefill,onShipped,logEmail,onQuickQuote}){
   const empty={country:"United States",name:"",company:"",zip:"",state:"",city:"",address1:"",address2:"",address3:"",phone:"",email:""};
   const [sender,setSender]=useState({country:"United States",...settings.sender,address2:"STE A",address3:""});
   const [receiver,setReceiver]=useState({...empty,zip:"90210"});
@@ -440,14 +440,16 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
       <div className="flex-1 min-w-0 space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-base font-semibold text-stone-800 flex items-center gap-2"><Package className="w-4 h-4 text-blue-600"/>Create shipment</h1>
-          <button onClick={newShipment} className="flex items-center gap-1.5 text-sm bg-stone-200 text-stone-700 rounded px-3 py-1.5 font-medium hover:bg-stone-300"><Plus className="w-4 h-4"/>New shipment</button>
+          <div className="flex items-center gap-2">
+            {onQuickQuote&&<button onClick={onQuickQuote} className="flex items-center gap-1.5 text-sm bg-stone-100 text-stone-700 border border-stone-200 rounded px-3 py-1.5 font-medium hover:bg-stone-200"><Calculator className="w-4 h-4"/>Quick quote</button>}
+            <button onClick={newShipment} className="flex items-center gap-1.5 text-sm bg-stone-200 text-stone-700 rounded px-3 py-1.5 font-medium hover:bg-stone-300"><Plus className="w-4 h-4"/>New shipment</button>
+          </div>
         </div>
         <div className="flex flex-wrap items-end gap-3 border border-stone-200 rounded-lg bg-white p-3">
           <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Ship date</div><div className="text-sm font-mono text-stone-800 py-1">{new Date().toLocaleDateString()}</div></div>
           <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">Invoice #</div><input value={invoiceNo} onChange={e=>setInvoiceNo(e.target.value)} placeholder="INV-…" className="w-full bg-transparent text-sm outline-none border-b border-stone-200 focus:border-blue-500 py-1 placeholder-stone-300"/></div>
           <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">PO #</div><input value={poNo} onChange={e=>setPoNo(e.target.value)} placeholder="PO-…" className="w-full bg-transparent text-sm outline-none border-b border-stone-200 focus:border-blue-500 py-1 placeholder-stone-300"/></div>
           <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">Reference #</div><input value={reference} onChange={e=>setReference(e.target.value)} placeholder="order / ref" className="w-full bg-transparent text-sm outline-none border-b border-stone-200 focus:border-blue-500 py-1 placeholder-stone-300"/></div>
-          <button onClick={saveDraft} className={`flex items-center gap-1.5 text-sm rounded px-3 py-2 font-medium ${saved?"bg-emerald-600 text-white":"bg-stone-200 text-stone-700 hover:bg-stone-300"}`}>{saved?<><Check className="w-4 h-4"/>Saved</>:<><FileText className="w-4 h-4"/>Save draft</>}</button>
         </div>
         <div className="relative grid lg:grid-cols-2 gap-4">
           <AddressCard title="Sender" data={sender} set={setSender} addresses={settings.addresses}/>
@@ -629,6 +631,7 @@ function ServiceList({quotes,best,bought,action,label,doneLabel,showCost,ready=t
             {comps.map((c,i)=><div key={i} className="flex justify-between text-[13px]"><span className="text-stone-600">{c.label}</span><span className="font-mono text-stone-700">{money(c.amount)}</span></div>)}
             <div className="flex justify-between text-[13px] border-t border-stone-200 pt-1 mt-1 font-semibold"><span>Total</span><span className="font-mono">{money(sell)}</span></div>
           </div>
+          {q.dimWeight&&<div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-2 flex items-center gap-1.5"><AlertTriangle className="w-3 h-3 shrink-0"/>Billed on <b>dimensional weight</b>{q.quotedWeight?` (${q.quotedWeight} lb)`:""}, not actual weight — the box is large for its weight.</div>}
           {eta&&<div className="text-[11px] text-stone-400 mt-2 flex items-center gap-1"><Calendar className="w-3 h-3"/>Estimated delivery {fmtDeliv(eta)} · {days} business day{days>1?"s":""} in transit</div>}
         </div>}
       </div>
@@ -904,6 +907,53 @@ function QuickQuote({onClose,client,england}){
           <div className="flex-1 min-w-0"><ServiceList quotes={quotes} ready={ready}/></div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ════════ SCAN ════════ */
+function Scan({orders,goShip,goTab}){
+  const [val,setVal]=useState("");
+  const [log,setLog]=useState([]);
+  const [err,setErr]=useState("");
+  const inputRef=React.useRef(null);
+  useEffect(()=>{const t=setTimeout(()=>{try{inputRef.current&&inputRef.current.focus();}catch(e){}},100);return ()=>clearTimeout(t);},[]);
+  const findOrder=(code)=>{
+    const c=String(code).trim().toLowerCase();
+    if(!c)return null;
+    return orders.find(o=>[o.name,o.id,o.sku,o.tracking,o.customer,o.zip,o.barcode].filter(Boolean).some(v=>String(v).toLowerCase()===c))
+      ||orders.find(o=>[o.name,o.sku,o.tracking,o.customer].filter(Boolean).some(v=>String(v).toLowerCase().includes(c)));
+  };
+  const submit=(code)=>{
+    const o=findOrder(code);
+    setVal("");
+    if(!o){setErr(`No order found for “${code}”.`);setLog(l=>[{code,when:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"}),ok:false},...l].slice(0,12));setTimeout(()=>setErr(""),2500);return;}
+    setErr("");
+    setLog(l=>[{code,when:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"}),ok:true,order:o.name},...l].slice(0,12));
+    goShip({receiver:{name:o.customer,company:o.company,zip:o.zip,state:o.state,city:o.city,address1:o.address1,phone:o.phone,email:o.email},weight:o.weight,reference:o.name,fromOrderId:o.id});
+  };
+  return (
+    <div className="max-w-2xl space-y-4">
+      <div className="flex items-center gap-2"><ScanLine className="w-5 h-5 text-blue-600"/><h1 className="text-base font-semibold text-stone-800">Scan to ship</h1></div>
+      <p className="text-sm text-stone-500">Scan an order barcode, SKU, or tracking number with your handheld scanner (or type it and press Enter). The matching order loads straight into the Ship tab, ready to print — same flow as ShipManager or SKU Savvy.</p>
+      <div className="border-2 border-dashed border-blue-200 rounded-xl bg-blue-50/40 p-6 flex flex-col items-center gap-3">
+        <ScanLine className="w-10 h-10 text-blue-400"/>
+        <input ref={inputRef} value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();submit(val);}}} placeholder="Scan or type a code, then Enter" className="w-full max-w-md text-center bg-white border border-stone-300 rounded-lg px-4 py-3 text-lg font-mono outline-none focus:border-blue-500"/>
+        <button onClick={()=>submit(val)} className="text-sm bg-stone-900 text-white rounded px-5 py-2 font-medium hover:bg-stone-800">Look up</button>
+        {err&&<div className="text-sm text-rose-600 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4"/>{err}</div>}
+      </div>
+      <div className="text-[11px] text-stone-400">Tip: most barcode scanners act like a keyboard and send Enter automatically — just keep this box focused and scan.</div>
+      {log.length>0&&<div className="border border-stone-200 rounded-lg bg-white overflow-hidden">
+        <div className="px-4 py-2 bg-stone-50 text-[11px] uppercase tracking-widest text-stone-400">Recent scans</div>
+        <div className="divide-y divide-stone-100">{log.map((e,i)=>(
+          <div key={i} className="flex items-center gap-3 px-4 py-2 text-sm">
+            {e.ok?<CheckCircle2 className="w-4 h-4 text-emerald-500"/>:<X className="w-4 h-4 text-rose-400"/>}
+            <span className="font-mono text-stone-700">{e.code}</span>
+            <span className="flex-1 text-stone-400 text-xs">{e.ok?`→ ${e.order} opened in Ship`:"not found"}</span>
+            <span className="text-[11px] text-stone-400">{e.when}</span>
+          </div>
+        ))}</div>
+      </div>}
     </div>
   );
 }
@@ -1504,7 +1554,29 @@ function Integrations({settings,setSettings}){
 function Billing({settings,setSettings}){
   const [n,setN]=useState({carrier:"FedEx",account:"",label:""});
   const add=()=>{ if(!n.account)return; setSettings({...settings,thirdPartyAccts:[...settings.thirdPartyAccts,{id:"tp"+Date.now(),...n}]}); setN({carrier:"FedEx",account:"",label:""}); };
+  const prepaid=settings.prepaid||{balance:0,autoRecharge:false,rechargeAt:25,rechargeAmount:100,history:[]};
+  const setPrepaid=(patch)=>setSettings({...settings,prepaid:{...prepaid,...patch}});
+  const [amt,setAmt]=useState("100");
+  const [added,setAdded]=useState(false);
+  const addFunds=()=>{const a=parseFloat(amt);if(!a||a<=0)return;const bal=Math.round((prepaid.balance+a)*100)/100;const hist=[{id:Date.now(),amount:a,when:new Date().toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})},...(prepaid.history||[])].slice(0,20);setPrepaid({balance:bal,history:hist});setAdded(true);setTimeout(()=>setAdded(false),1800);};
   return (<div className="max-w-xl space-y-4">
+    <Panel title="Prepaid balance">
+      <div className="flex items-end justify-between">
+        <div><div className="text-[11px] uppercase tracking-widest text-stone-400">Available funds</div><div className="text-3xl font-semibold text-stone-900 font-mono">{money(prepaid.balance||0)}</div></div>
+        <Wallet className="w-8 h-8 text-blue-500"/>
+      </div>
+      <p className="text-[12px] text-stone-400">Prepaid funds cover label purchases and prepaid carrier products. Top up here; each label drawn against this balance shows in the ledger.</p>
+      <div className="flex items-end gap-2">
+        <div className="flex-1"><div className="text-[10px] uppercase tracking-widest text-stone-500 mb-1">Add amount ($)</div><div className="flex gap-1.5">{[50,100,250,500].map(v=><button key={v} onClick={()=>setAmt(String(v))} className={`text-sm rounded px-2.5 py-1.5 border ${String(v)===amt?"bg-blue-50 border-blue-300 text-blue-700":"bg-white border-stone-200 text-stone-600 hover:bg-stone-50"}`}>${v}</button>)}<Input type="number" value={amt} onChange={e=>setAmt(e.target.value)} className="w-24"/></div></div>
+        <button onClick={addFunds} className={`text-sm rounded px-4 py-2 font-medium flex items-center gap-1.5 ${added?"bg-emerald-600 text-white":"bg-stone-900 text-white hover:bg-stone-800"}`}>{added?<><Check className="w-4 h-4"/>Added</>:<><Plus className="w-4 h-4"/>Add funds</>}</button>
+      </div>
+      <label className="flex items-center gap-2 text-sm text-stone-600 pt-1"><input type="checkbox" checked={prepaid.autoRecharge} onChange={e=>setPrepaid({autoRecharge:e.target.checked})} className="accent-blue-600"/>Auto-recharge when balance is low</label>
+      {prepaid.autoRecharge&&<div className="grid grid-cols-2 gap-2 pl-6">
+        <Field label="When balance drops below $"><Input type="number" value={prepaid.rechargeAt} onChange={e=>setPrepaid({rechargeAt:+e.target.value})}/></Field>
+        <Field label="Recharge by $"><Input type="number" value={prepaid.rechargeAmount} onChange={e=>setPrepaid({rechargeAmount:+e.target.value})}/></Field>
+      </div>}
+      {prepaid.history&&prepaid.history.length>0&&<div className="border border-stone-200 rounded-lg divide-y divide-stone-100 mt-1">{prepaid.history.slice(0,5).map(h=><div key={h.id} className="flex items-center justify-between px-3 py-1.5 text-[13px]"><span className="text-stone-500">Added funds</span><span className="font-mono text-emerald-600">+{money(h.amount)}</span><span className="text-[11px] text-stone-400 w-28 text-right">{h.when}</span></div>)}</div>}
+    </Panel>
     <Panel title="Default billing">
       <Field label="Bill shipments to"><Select value={settings.defaultBillTo} onChange={e=>setSettings({...settings,defaultBillTo:e.target.value})}><option value="sender">Sender (you)</option><option value="receiver">Receiver</option><option value="third">Third-party account</option></Select></Field>
     </Panel>
