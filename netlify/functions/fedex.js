@@ -64,14 +64,18 @@ async function transit(c, body, tk) {
   let d = null; try { d = JSON.parse(text); } catch {}
   if (!r.ok) return { ok: false, error: "FedEx rate HTTP " + r.status + (d && d.errors ? ": " + (d.errors[0] && d.errors[0].message || JSON.stringify(d.errors)) : (text ? ": " + text.slice(0, 250) : "")) };
   const details = (d && d.output && d.output.rateReplyDetails) || [];
+  try { console.log("FEDEX transit count=" + details.length + " sample=" + JSON.stringify((details[0] && { svc: details[0].serviceType, commit: details[0].commit, op: details[0].operationalDetail }) || {}).slice(0, 700)); } catch (e) {}
   const services = details.map((s) => {
     const op = s.operationalDetail || {};
     const commit = s.commit || {};
+    const dd = commit.dateDetail || {};
     const td = commit.transitDays || {};
-    const transitEnum = op.transitTime || td.description || td.minimumTransitTime || null;
+    // FedEx puts the transit enum at commit.transitTime (sometimes operationalDetail.transitTime)
+    const transitEnum = commit.transitTime || op.transitTime || td.description || td.minimumTransitTime || null;
     const days = transitEnum && DAYS[transitEnum] != null ? DAYS[transitEnum] : null;
-    const deliveryDate = fmtDate(op.deliveryDate || (commit.dateDetail && commit.dateDetail.date) || op.commitDate || (commit.commitTimestamp));
-    return { serviceType: s.serviceType, serviceName: s.serviceName || s.serviceType, transitDays: days, transitLabel: transitEnum ? String(transitEnum).replace(/_/g, " ").toLowerCase() : null, deliveryDate, deliveryDay: op.deliveryDay || (commit.dateDetail && commit.dateDetail.dayOfWeek) || null };
+    // and the delivery date at commit.dateDetail.dayCxsFormat (sometimes .date / operationalDetail.deliveryDate)
+    const deliveryDate = fmtDate(dd.dayCxsFormat || dd.date || op.deliveryDate || op.commitDate || commit.commitTimestamp);
+    return { serviceType: s.serviceType, serviceName: s.serviceName || s.serviceType, transitDays: days, transitLabel: transitEnum ? String(transitEnum).replace(/_/g, " ").toLowerCase() : null, deliveryDate, deliveryDay: dd.dayOfWeek || op.deliveryDay || null };
   }).filter((x) => x.serviceType);
   return { ok: true, services };
 }
@@ -90,7 +94,8 @@ async function address(c, body, tk) {
   if (!r.ok) return { ok: false, error: "FedEx address HTTP " + r.status + (d && d.errors ? ": " + (d.errors[0] && d.errors[0].message || JSON.stringify(d.errors)) : (text ? ": " + text.slice(0, 250) : "")) };
   const res = (d && d.output && d.output.resolvedAddresses && d.output.resolvedAddresses[0]) || null;
   if (!res) return { ok: true, classification: "UNKNOWN", resolved: null };
-  const cls = (res.classification || "UNKNOWN").toUpperCase();
+  try { console.log("FEDEX address classification=" + res.classification + " attrs=" + JSON.stringify(res.attributes || {}).slice(0, 400)); } catch (e) {}
+  let cls = (res.classification || (res.attributes && res.attributes.Classification) || "UNKNOWN").toUpperCase();
   const attrs = res.attributes || {};
   return {
     ok: true,
