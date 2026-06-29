@@ -471,7 +471,7 @@ function usePersist(key,initial){
 export default function App(){
   const [tab,setTab]=useState("ship");
   const [users,setUsers]=usePersist("users",SEED_USERS);
-  const [currentUser,setCurrentUser]=useState(null);
+  const [currentUser,setCurrentUser]=usePersist("session",null);
   const [clients,setClients]=usePersist("clients",SEED_CLIENTS);
   const [clientId,setClientId]=useState("c1");
   const [accounts,setAccounts]=usePersist("accounts",SEED_ACCOUNTS);
@@ -489,6 +489,7 @@ export default function App(){
   const [prefill,setPrefill]=useState(null);
   const [settings,setSettings]=usePersist("settings",{company:"Sparkle in Pink",sender:{name:"Matt Goeckeritz",company:"Riley Blake Designs",zip:"84003",state:"UT",city:"Lehi",address1:"4060 W 2100 N",phone:"801-816-0540",email:"spencertesttes@test.com"},defaultBillTo:"sender",thirdPartyAccts:[{id:"tp1",carrier:"FedEx",account:"20601652",label:"England FedEx"}],shopify:true,notify:NOTIFY_DEFAULTS,boxes:SEED_BOXES,checkout:CHECKOUT_DEFAULTS,platforms:PLATFORM_DEFAULTS,plan:"starter",england:{enabled:false,base:"https://englandship.rocksolidinternet.com",apiKey:"",customerId:"",account:"20601652"},addresses:[{id:"ab1",name:"Riley Blake Designs",city:"Lehi",state:"UT",zip:"84003",address1:"4060 W 2100 N"}]});
 
+  useEffect(()=>{ if(currentUser&&currentUser.role==="customer"&&currentUser.clientId) setClientId(currentUser.clientId); },[currentUser]);
   const client=clients.find(c=>c.id===clientId)||clients[0];
   const logEmail=(e)=>setEmails(p=>[{id:"e"+Date.now()+Math.random(),date:new Date().toLocaleString(),status:"sent",...e},...p]);
   const addLedger=(entry)=>setLedger(l=>[{id:"l"+Date.now()+Math.random(),date:new Date().toLocaleDateString(),...entry},...l]);
