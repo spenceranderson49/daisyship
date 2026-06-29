@@ -61,25 +61,58 @@ const newTracking=carrier=>carrier==="UPS"?"1Z"+Math.random().toString(36).slice
 const RATES_ENDPOINT="/.netlify/functions/quote";
 async function getLiveRates(s,england){
   if(!england||!england.enabled) return null;
-  const body={fromZip:s.fromZip,toZip:s.toZip,fromCountry:s.fromCountry||"US",toCountry:s.toCountry||"US",residential:!!s.residential,pieces:(s.pieces||[]).map(p=>({weight:+p.weight||1,length:+p.L||12,width:+p.W||9,height:+p.H||4})),account:{base:england.base,apiKey:england.apiKey,customerId:england.customerId}};
+  const body={fromZip:s.fromZip,toZip:s.toZip,fromCountry:s.fromCountry||"US",toCountry:s.toCountry||"US",residential:!!s.residential,signature:!!s.signature,signatureOption:s.signatureOption||(s.signature?"direct":"none"),pieces:(s.pieces||[]).map(p=>({weight:+p.weight||1,length:+p.L||12,width:+p.W||9,height:+p.H||4})),account:{base:england.base,apiKey:england.apiKey,customerId:england.customerId}};
   try{
     const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),12000);
     const r=await fetch(RATES_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:ctrl.signal});
     clearTimeout(t);
+    let data=null; try{data=await r.json();}catch(e){ try{data={error:await r.text()};}catch(e2){} }
+    if(data&&typeof data==="object") return data;
     if(!r.ok) return {live:false,error:`Server ${r.status}`,rates:[]};
-    const data=await r.json();
-    return data;
+    return {live:false,error:"Empty response from server",rates:[]};
   }catch(e){ return {live:false,error:(e&&e.message)||"Network error",rates:[]}; }
+}
+const SHIP_ENDPOINT="/.netlify/functions/ship";
+function acctOf(england){return {base:england.base,apiKey:england.apiKey,customerId:england.customerId,integrationId:england.integrationId};}
+async function shipCall(payload){
+  const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),20000);
+  try{
+    const r=await fetch(SHIP_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),signal:ctrl.signal});
+    clearTimeout(t);
+    let data=null; try{data=await r.json();}catch(e){ try{data={ok:false,error:await r.text()};}catch(e2){data={ok:false,error:"Bad response"};} }
+    return data||{ok:false,error:"Empty response"};
+  }catch(e){clearTimeout(t);return {ok:false,error:(e&&e.message)||"Network error"};}
+}
+function openLabelPdf(base64){
+  try{
+    const bin=atob(base64);const len=bin.length;const bytes=new Uint8Array(len);
+    for(let i=0;i<len;i++)bytes[i]=bin.charCodeAt(i);
+    const blob=new Blob([bytes],{type:"application/pdf"});
+    const url=URL.createObjectURL(blob);
+    const w=window.open(url,"_blank");
+    if(!w){const a=document.createElement("a");a.href=url;a.download="label.pdf";a.click();}
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+    return true;
+  }catch(e){return false;}
+}
+// poll ship status until booked or timeout (~30s); calls onUpdate with each state
+async function pollLabel(england,orderId,onUpdate){
+  for(let i=0;i<10;i++){
+    await new Promise(r=>setTimeout(r,3000));
+    const res=await shipCall({action:"status",account:acctOf(england),orderId});
+    if(res&&res.booked){onUpdate&&onUpdate(res);return res;}
+  }
+  return {ok:true,booked:false,timedOut:true};
 }
 
 /* ════════ SEED ════════ */
 const SEED_CLIENTS=[{id:"c1",name:"Sparkle in Pink",markup:18,origin:"84003"},{id:"c2",name:"House accounts",markup:12,origin:"84057"}];
 const SEED_ACCOUNTS=[{id:"a1",label:"England Logistics",provider:"england",account:"20601652",status:"connected",mode:"demo"}];
 const SEED_ORDERS=[
-  {id:1042,name:"#1042",customer:"Jenna Reyes",company:"",zip:"90210",city:"Beverly Hills",state:"CA",address1:"412 Canon Dr",phone:"310-555-0142",email:"jenna@example.com",total:"48.00",weight:2,items:"2× Ruffle Leggings",sku:"SIP-LEG-RUF",product:"Ruffle Leggings",status:"unfulfilled",date:"6/24"},
-  {id:1043,name:"#1043",customer:"Marcus Lee",company:"",zip:"10001",city:"New York",state:"NY",address1:"88 W 28th St",phone:"212-555-0119",email:"marcus@example.com",total:"112.50",weight:5,items:"1× Tutu Set, 3× Hair Bows",sku:"SIP-TUTU-SET",product:"Tutu Set",status:"unfulfilled",date:"6/24"},
-  {id:1044,name:"#1044",customer:"Priya Shah",company:"",zip:"60614",city:"Chicago",state:"IL",address1:"2210 N Halsted St",phone:"312-555-0173",email:"priya@example.com",total:"29.99",weight:1,items:"1× Onesie",sku:"SIP-ONESIE",product:"Onesie",status:"unfulfilled",date:"6/25"},
-  {id:1045,name:"#1045",customer:"Dana Cole",company:"",zip:"33101",city:"Miami",state:"FL",address1:"701 Brickell Ave",phone:"305-555-0188",email:"dana@example.com",total:"76.20",weight:3,items:"1× Swim Set, 2× Sandals",sku:"SIP-SWIM-SET",product:"Swim Set",status:"unfulfilled",date:"6/25"},
+  {id:1042,name:"#1042",customer:"Jenna Reyes",company:"",zip:"90210",city:"Beverly Hills",state:"CA",address1:"412 Canon Dr",phone:"310-555-0142",email:"jenna@example.com",total:"48.00",weight:2,items:"2× Ruffle Leggings",sku:"SIP-LEG-RUF",product:"Ruffle Leggings",source:"Shopify",shippingService:"Standard",status:"unfulfilled",date:"6/24"},
+  {id:1043,name:"#1043",customer:"Marcus Lee",company:"",zip:"10001",city:"New York",state:"NY",address1:"88 W 28th St",phone:"212-555-0119",email:"marcus@example.com",total:"112.50",weight:5,items:"1× Tutu Set, 3× Hair Bows",sku:"SIP-TUTU-SET",product:"Tutu Set",source:"Shopify",shippingService:"Express",status:"unfulfilled",date:"6/24"},
+  {id:1044,name:"#1044",customer:"Priya Shah",company:"",zip:"60614",city:"Chicago",state:"IL",address1:"2210 N Halsted St",phone:"312-555-0173",email:"priya@example.com",total:"29.99",weight:1,items:"1× Onesie",sku:"SIP-ONESIE",product:"Onesie",source:"Amazon",shippingService:"Standard",status:"unfulfilled",date:"6/25"},
+  {id:1045,name:"#1045",customer:"Dana Cole",company:"",zip:"33101",city:"Miami",state:"FL",address1:"701 Brickell Ave",phone:"305-555-0188",email:"dana@example.com",total:"76.20",weight:3,items:"1× Swim Set, 2× Sandals",sku:"SIP-SWIM-SET",product:"Swim Set",source:"Shopify",shippingService:"Standard",status:"unfulfilled",date:"6/25"},
 ];
 const SCAN_CITIES=["Memphis, TN hub","Indianapolis, IN hub","Ontario, CA","Newark, NJ","Atlanta, GA hub","Local facility","Out for delivery"];
 const seedShip=(dayAgo,carrier,service,name,city,state,zip,cost,weight,status,lastScan,onTime=true)=>({id:Math.floor(Math.random()*1e9),date:new Date(Date.now()-dayAgo*864e5).toLocaleDateString(),dayAgo,tracking:newTracking(carrier),carrier,service,recipient:{name,city,state,zip},sender:{},fromZip:"84003",toZip:zip,weight,dims:{L:12,W:9,H:4},pieces:[{weight,L:12,W:9,H:4}],cost,sell:Math.round(cost*1.18*100)/100,billTo:"sender",thirdAcct:"",status:status||(dayAgo>3?"Delivered":dayAgo>0?"In transit":"Label created"),lastScan:lastScan||"Origin scan",eta:new Date(Date.now()+Math.max(0,3-dayAgo)*864e5).toLocaleDateString(),onTime,reference:"",client:"Sparkle in Pink",intl:false});
@@ -295,9 +328,12 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
   const [insurance,setInsurance]=useState("");
   const [residential,setRes]=useState(true);
   const [signature,setSig]=useState(false);
+  const [sigOption,setSigOption]=useState("none");
+  const [orderSort,setOrderSort]=useState("date");
   const [billTo,setBillTo]=useState(settings.defaultBillTo||"sender");
   const [thirdAcct,setThirdAcct]=useState("");
   const [bought,setBought]=useState(null);
+  const [shipStatus,setShipStatus]=useState(null);
   const [selectedOrder,setSelectedOrder]=useState(null);
   const [verify,setVerify]=useState(null);
   const [saved,setSaved]=useState(false);
@@ -334,7 +370,7 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
 
   const swap=()=>{const s=sender;setSender(receiver);setReceiver(s);};
   const ready=/^\d{5}/.test(receiver.zip||"")&&totalWeight>0;
-  const shipment={fromZip:sender.zip||client.origin,toZip:receiver.zip,pieces,residential,signature,intl};
+  const shipment={fromZip:sender.zip||client.origin,toZip:receiver.zip,pieces,residential,signature,signatureOption:sigOption,intl};
   const localQuotes=()=>quoteRates(shipment).filter(q=>intl?true:(residential?q.key!=="fedex_ground":q.key!=="fedex_home"));
   const [rateSrc,setRateSrc]=useState({rates:[],live:false,loading:false,error:null});
   useEffect(()=>{
@@ -353,24 +389,47 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
   const quotes=useMemo(()=>rateSrc.rates.map(q=>({...q,sell:Math.round(q.cost*(1+client.markup/100)*100)/100})).sort((a,b)=>a.sell-b.sell),[rateSrc,client.markup]);
   const best=quotes[0]?.key;
 
-  const print=(q)=>{
+  const buildRec=(q,carrier,extra)=>({id:Date.now(),date:new Date().toLocaleDateString(),tracking:(extra&&extra.tracking)||newTracking(carrier),carrier,service:q.label,recipient:{...receiver},sender:{...sender},fromZip:sender.zip,toZip:receiver.zip,weight:totalWeight,pieces:pieces.map(p=>({...p})),dims:pieces[0],insurance,cost:q.cost,sell:q.sell,billTo,thirdAcct,status:"Label created",lastScan:"Label created",eta:"—",onTime:true,reference,invoiceNo,poNo,residential,intl,bookNumber:extra&&extra.bookNumber,customs:intl?{...customs,total:customsTotal,ci:"CI-"+rnd(5)}:null});
+  const print=async(q)=>{
     const carrier=carrierOf(q.label);
-    const rec={id:Date.now(),date:new Date().toLocaleDateString(),tracking:newTracking(carrier),carrier,service:q.label,recipient:{...receiver},sender:{...sender},fromZip:sender.zip,toZip:receiver.zip,weight:totalWeight,pieces:pieces.map(p=>({...p})),dims:pieces[0],insurance,cost:q.cost,sell:q.sell,billTo,thirdAcct,status:"Label created",lastScan:"Label created",eta:"—",onTime:true,reference,invoiceNo,poNo,residential,intl,customs:intl?{...customs,total:customsTotal,ci:"CI-"+rnd(5)}:null};
-    onShipped(rec,selectedOrder);
-    setBought(q.key);setTimeout(()=>setBought(null),1800);
+    const eng=settings.england;
+    const canBook=eng&&eng.enabled&&eng.integrationId;
+    if(!canBook){
+      onShipped(buildRec(q,carrier),selectedOrder);
+      setBought(q.key);setTimeout(()=>setBought(null),1800);
+      return;
+    }
+    setBought(q.key);setShipStatus({state:"booking",key:q.key});
+    const order={orderId:"SC"+Date.now(),reference:reference||invoiceNo||"",orderNumber:invoiceNo||reference||"",shippingService:q.label,shippingTotal:String(q.sell??q.cost??"0.00"),contentDescription:"Merchandise",signatureOption:sigOption,insuranceAmount:insurance||null,sender:{...sender,country:sender.country||"US"},receiver:{...receiver,country:receiver.country||"US"},pieces:pieces.map(p=>({weight:p.weight,length:p.L,width:p.W,height:p.H}))};
+    const res=await shipCall({action:"ship",account:acctOf(eng),order});
+    if(!res||!res.ok){setShipStatus({state:"error",key:q.key,msg:(res&&res.error)||"Booking failed"});setBought(null);return;}
+    const done=(st)=>{ if(st.labelPdfBase64)openLabelPdf(st.labelPdfBase64); onShipped(buildRec(q,carrier,st),selectedOrder); setShipStatus({state:"booked",key:q.key,tracking:st.tracking}); setTimeout(()=>{setBought(null);setShipStatus(null);},2600); };
+    if(res.booked){done(res);return;}
+    setShipStatus({state:"pending",key:q.key,orderId:res.orderId});
+    pollLabel(eng,res.orderId,done).then(r=>{ if(r&&r.timedOut){setShipStatus({state:"pending_timeout",key:q.key});setBought(null);} });
   };
   const sendEmail=()=>{const to=emailTo||receiver.email||"customer@example.com";logEmail&&logEmail({to,subject:`Tracking for your ${settings.company} shipment ☁️`,type:"Shipped"});setSent("email");setTimeout(()=>setSent(""),1800);};
   const sendLabel=()=>{const to=emailTo||receiver.email||"customer@example.com";logEmail&&logEmail({to,subject:`Your shipping label from ${settings.company}`,type:"Label"});setSent("label");setTimeout(()=>setSent(""),1800);};
 
-  const ordersToShow=orders.filter(o=>o.status==="unfulfilled");
+  const ordersToShow=useMemo(()=>{const list=orders.filter(o=>o.status==="unfulfilled");return [...list].sort((a,b)=>{
+    if(orderSort==="total")return parseFloat(b.total||0)-parseFloat(a.total||0);
+    if(orderSort==="customer")return (a.customer||"").localeCompare(b.customer||"");
+    if(orderSort==="state")return (a.state||"").localeCompare(b.state||"");
+    if(orderSort==="weight")return (b.weight||0)-(a.weight||0);
+    return String(b.id).localeCompare(String(a.id));
+  });},[orders,orderSort]);
   const saveDraft=()=>{const d={id:Date.now(),label:reference||receiver.name||receiver.city||"Untitled",when:new Date().toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}),to:`${receiver.city||""}${receiver.state?", "+receiver.state:""}`,snap:{sender,receiver,reference,invoiceNo,poNo,pieces,residential,signature,billTo,thirdAcct,insurance,selectedOrder,customs}};setDrafts(p=>[d,...p]);setSaved(true);setTimeout(()=>setSaved(false),1600);};
+  const newShipment=()=>{setReceiver({...empty,zip:""});setReference("");setInvoiceNo("");setPoNo("");setPieces([{weight:3,L:12,W:9,H:4}]);setInsurance("");setRes(true);setSig(false);setSigOption("none");setBillTo(settings.defaultBillTo||"sender");setThirdAcct("");setSelectedOrder(null);setVerify(null);setBought(null);setEmailTo("");setReturnDiff(false);};
   return (
     <div className="flex flex-col lg:flex-row gap-4">
       <aside className="lg:w-64 shrink-0 space-y-2">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-stone-500 mb-1"><ShoppingBag className="w-4 h-4"/>Orders</div>
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-stone-500"><ShoppingBag className="w-4 h-4"/>Orders</div>
+          <select value={orderSort} onChange={e=>setOrderSort(e.target.value)} className="bg-white border border-stone-200 rounded px-1.5 py-1 text-[11px] outline-none focus:border-blue-500"><option value="date">Newest</option><option value="total">Total</option><option value="customer">Name</option><option value="state">State</option><option value="weight">Weight</option></select>
+        </div>
         {ordersToShow.length===0?<div className="border border-dashed border-stone-300 rounded-lg p-4 text-center text-xs text-stone-400">No unfulfilled orders.</div>:ordersToShow.map(o=>(
           <button key={o.id} onClick={()=>applyOrder(o)} className={`w-full text-left border rounded-lg p-3 transition-colors ${selectedOrder===o.id?"border-blue-400 bg-blue-50":"border-stone-200 bg-white hover:border-stone-300"}`}>
-            <div className="flex items-center justify-between"><span className="font-semibold text-sm text-stone-800">{o.name}</span><span className="font-mono text-xs text-stone-400">${o.total}</span></div>
+            <div className="flex items-center justify-between"><span className="font-semibold text-sm text-stone-800 flex items-center gap-1.5">{o.name}{o.source&&<span className="text-[9px] uppercase tracking-wide text-stone-400 border border-stone-200 rounded px-1">{o.source}</span>}</span><span className="font-mono text-xs text-stone-400">${o.total}</span></div>
             <div className="text-xs text-stone-600 mt-0.5">{o.customer}</div>
             <div className="text-[11px] text-stone-400 mt-0.5">{o.city}, {o.state} {o.zip}</div>
             <div className="text-[11px] text-stone-400 truncate">{o.items}</div>
@@ -379,6 +438,10 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
         <div className="text-[11px] text-stone-400 pt-2">Saved drafts now live in the <b>Drafts</b> tab.</div>
       </aside>
       <div className="flex-1 min-w-0 space-y-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-base font-semibold text-stone-800 flex items-center gap-2"><Package className="w-4 h-4 text-blue-600"/>Create shipment</h1>
+          <button onClick={newShipment} className="flex items-center gap-1.5 text-sm bg-stone-200 text-stone-700 rounded px-3 py-1.5 font-medium hover:bg-stone-300"><Plus className="w-4 h-4"/>New shipment</button>
+        </div>
         <div className="flex flex-wrap items-end gap-3 border border-stone-200 rounded-lg bg-white p-3">
           <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Ship date</div><div className="text-sm font-mono text-stone-800 py-1">{new Date().toLocaleDateString()}</div></div>
           <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">Invoice #</div><input value={invoiceNo} onChange={e=>setInvoiceNo(e.target.value)} placeholder="INV-…" className="w-full bg-transparent text-sm outline-none border-b border-stone-200 focus:border-blue-500 py-1 placeholder-stone-300"/></div>
@@ -387,9 +450,9 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
           <button onClick={saveDraft} className={`flex items-center gap-1.5 text-sm rounded px-3 py-2 font-medium ${saved?"bg-emerald-600 text-white":"bg-stone-200 text-stone-700 hover:bg-stone-300"}`}>{saved?<><Check className="w-4 h-4"/>Saved</>:<><FileText className="w-4 h-4"/>Save draft</>}</button>
         </div>
         <div className="relative grid lg:grid-cols-2 gap-4">
-          <AddressCard title="Sender" data={sender} set={setSender}/>
+          <AddressCard title="Sender" data={sender} set={setSender} addresses={settings.addresses}/>
           <button onClick={swap} title="Swap" className="hidden lg:flex absolute left-1/2 top-6 -translate-x-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-stone-200 border border-stone-300 hover:bg-stone-300 text-stone-700"><ArrowLeftRight className="w-4 h-4"/></button>
-          <AddressCard title="Receiver" data={receiver} set={setReceiver} required residential={residential} setResidential={setRes}/>
+          <AddressCard title="Receiver" data={receiver} set={setReceiver} required residential={residential} setResidential={setRes} addresses={settings.addresses}/>
         </div>
         {intl&&<div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2"><MapPin className="w-4 h-4"/>International shipment to <b>{receiver.country}</b> — FedEx &amp; DHL rates shown, customs info required below.</div>}
         <div className="flex flex-wrap items-center gap-3 text-xs">
@@ -406,7 +469,7 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
             <div className="flex items-center gap-4">
               <span className="text-[11px] text-stone-400 font-mono">total {totalWeight} lb</span>
               <div className="flex items-center gap-1"><span className="text-[10px] uppercase tracking-widest text-stone-500">Insure $</span><input type="number" value={insurance} onChange={e=>setInsurance(e.target.value)} placeholder="0" className="w-16 bg-white border border-stone-300 rounded px-2 py-1 text-sm font-mono outline-none focus:border-blue-500 placeholder-stone-300"/></div>
-              <Toggle on={signature} set={setSig} label="Signature"/>
+              <div className="flex items-center gap-1.5"><span className="text-[10px] uppercase tracking-widest text-stone-500">Signature</span><select value={sigOption} onChange={e=>{setSigOption(e.target.value);setSig(e.target.value!=="none");}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-blue-500"><option value="none">None</option><option value="direct">Direct signature</option><option value="indirect">Indirect signature</option><option value="adult">Adult signature</option></select></div>
             </div>
           </div>
           {pieces.map((p,i)=>(
@@ -454,12 +517,20 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
           </div>
         )}
 
+        {selectedOrder&&(()=>{const so=orders.find(o=>o.id===selectedOrder);return so&&(so.shippingService||so.source)?<div className="flex items-center gap-2 text-xs text-stone-600 bg-stone-100 border border-stone-200 rounded-lg px-3 py-2"><Truck className="w-3.5 h-3.5 text-stone-400"/>From order <b>{so.name}</b>{so.source?` (${so.source})`:""} — buyer requested <b>{so.shippingService||"Standard"}</b>.</div>:null;})()}
         {ready&&<div className={`flex items-center gap-2 text-xs rounded-lg px-3 py-2 ${rateSrc.loading?"bg-stone-100 text-stone-500":rateSrc.live?"bg-emerald-50 text-emerald-700 border border-emerald-200":"bg-blue-50 text-blue-700 border border-blue-200"}`}>
           {rateSrc.loading?<><Loader2 className="w-3.5 h-3.5 animate-spin"/>Fetching live rates…</>
           :rateSrc.live?<><Wifi className="w-3.5 h-3.5"/>Live rates from your England account</>
           :<><Calculator className="w-3.5 h-3.5"/>Estimated rates{rateSrc.error?` · ${rateSrc.error}`:""} — connect your England account in Settings → Carrier accounts for live pricing</>}
         </div>}
         <ServiceList quotes={quotes} best={best} bought={bought} action={ready?print:null} label="Print label" doneLabel="Printed" ready={ready}/>
+        {shipStatus&&<div className={`flex items-center gap-2 text-sm rounded-lg px-3 py-2.5 ${shipStatus.state==="error"?"bg-rose-50 text-rose-700 border border-rose-200":shipStatus.state==="booked"?"bg-emerald-50 text-emerald-700 border border-emerald-200":shipStatus.state==="pending_timeout"?"bg-amber-50 text-amber-700 border border-amber-200":"bg-blue-50 text-blue-700 border border-blue-200"}`}>
+          {shipStatus.state==="booking"&&<><Loader2 className="w-4 h-4 animate-spin"/>Booking label on your England account…</>}
+          {shipStatus.state==="pending"&&<><Loader2 className="w-4 h-4 animate-spin"/>Order pushed to England — waiting for it to book and return the label…</>}
+          {shipStatus.state==="booked"&&<><CheckCircle2 className="w-4 h-4"/>Label printed{shipStatus.tracking?<> · tracking <span className="font-mono">{shipStatus.tracking}</span></>:""} — moved to Shipments.</>}
+          {shipStatus.state==="pending_timeout"&&<><AlertTriangle className="w-4 h-4"/>Order is in your England account but hasn't booked yet. Turn on auto-ship in Webship, or ship it there — the label & tracking will appear in Shipments once it books.</>}
+          {shipStatus.state==="error"&&<><AlertTriangle className="w-4 h-4"/>{shipStatus.msg}</>}
+        </div>}
 
         <div className="border border-stone-200 rounded-lg bg-white p-3 space-y-3">
           <div className="text-[11px] uppercase tracking-widest text-stone-600 font-semibold">Billing &amp; third-party</div>
@@ -481,6 +552,10 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
             <button onClick={sendEmail} className={`flex items-center gap-1.5 text-sm rounded px-3 py-2 font-medium ${sent==="email"?"bg-emerald-600 text-white":"bg-stone-200 text-stone-700 hover:bg-stone-300"}`}>{sent==="email"?<><Check className="w-4 h-4"/>Email sent</>:<><Mail className="w-4 h-4"/>Send tracking email</>}</button>
           </div>
           <p className="text-[11px] text-stone-400">Emails the buyer a tracking link or a printable label PDF. Logged under Settings → Email automation.</p>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={newShipment} className="flex items-center gap-1.5 text-sm bg-stone-200 text-stone-700 rounded px-4 py-2 font-medium hover:bg-stone-300"><Plus className="w-4 h-4"/>New shipment</button>
+          <button onClick={saveDraft} className={`flex items-center gap-1.5 text-sm rounded px-4 py-2 font-medium ${saved?"bg-emerald-600 text-white":"bg-stone-900 text-white hover:bg-stone-800"}`}>{saved?<><Check className="w-4 h-4"/>Saved to drafts</>:<><FileText className="w-4 h-4"/>Save draft</>}</button>
         </div>
       </div>
     </div>
@@ -516,16 +591,49 @@ function CommercialInvoice({sender,receiver,customs,total,reference,pieces,total
 }
 
 
+const addBizDays=(n)=>{const d=new Date();let added=0;let guard=0;while(added<n&&guard<60){d.setDate(d.getDate()+1);const day=d.getDay();if(day!==0&&day!==6)added++;guard++;}return d;};
+const fmtDeliv=(d)=>d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});
 function ServiceList({quotes,best,bought,action,label,doneLabel,showCost,ready=true}){
   const [view,setView]=useState("cheapest");
-  const Row=(q)=>(
-    <div key={q.key} className={`border rounded-lg px-3 py-2.5 flex items-center gap-4 ${q.key===best&&ready?"border-blue-200 bg-blue-50":"border-stone-200 bg-white"}`}>
-      <div className="flex-1 min-w-0"><div className="flex items-center gap-2">{view==="cheapest"&&<span className={`text-[10px] font-bold w-10 shrink-0 ${CARRIER_TINT[q.carrier]}`}>{q.carrier}</span>}<span className="text-sm truncate">{q.label}</span>{q.key===best&&ready&&<span className="text-[10px] uppercase text-blue-600 border border-blue-200 rounded px-1">best value</span>}</div><div className="text-[11px] text-stone-500">{q.minDays?(q.minDays===q.maxDays?`${q.minDays} business day${q.minDays>1?"s":""}`:`${q.minDays}–${q.maxDays} days`):""}</div></div>
-      {showCost&&<div className="text-right font-mono hidden sm:block"><div className="text-[10px] uppercase tracking-widest text-stone-400">cost</div><div className="text-sm text-stone-500">{ready?money(q.cost):"—"}</div></div>}
-      <div className="text-right font-mono"><div className="text-base font-semibold text-stone-900">{ready?money(q.sell??q.cost):"—"}</div></div>
-      {action&&<button onClick={()=>action(q)} disabled={!ready} className={`shrink-0 w-32 text-sm rounded px-3 py-2 font-medium flex items-center justify-center gap-1.5 disabled:opacity-40 ${bought===q.key?"bg-blue-600 text-white":"bg-stone-900 text-white hover:bg-stone-800"}`}>{bought===q.key?<><Check className="w-4 h-4"/>{doneLabel}</>:<><Printer className="w-4 h-4"/>{label}</>}</button>}
-    </div>
-  );
+  const [open,setOpen]=useState(null);
+  const Row=(q)=>{
+    const isOpen=open===q.key;
+    const days=q.maxDays||q.minDays;
+    const eta=ready&&days?addBizDays(days):null;
+    const sell=q.sell??q.cost;
+    const factor=q.cost?sell/q.cost:1;
+    let comps;
+    if(q.surcharges&&q.surcharges.length){
+      const surTotal=q.surcharges.reduce((a,s)=>a+(s.amount||0),0);
+      const baseRaw=q.base!=null?q.base:Math.max(0,q.cost-surTotal);
+      comps=[{label:"Base rate",amount:baseRaw*factor},...q.surcharges.map(s=>({label:s.label,amount:(s.amount||0)*factor}))];
+    } else {
+      comps=[{label:"Base rate",amount:sell*0.72},{label:"Fuel surcharge",amount:sell*0.16},{label:"Handling & surcharges",amount:sell*0.12}];
+    }
+    const live=!!(q.surcharges&&q.surcharges.length);
+    return (
+      <div key={q.key} className={`border rounded-lg ${q.key===best&&ready?"border-blue-200 bg-blue-50":"border-stone-200 bg-white"}`}>
+        <div className="px-3 py-2.5 flex items-center gap-3">
+          <button onClick={()=>setOpen(isOpen?null:q.key)} className="text-stone-400 shrink-0" title="Charge breakdown"><ChevronRight className={`w-4 h-4 transition-transform ${isOpen?"rotate-90":""}`}/></button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">{view==="cheapest"&&<span className={`text-[10px] font-bold w-10 shrink-0 ${CARRIER_TINT[q.carrier]}`}>{q.carrier}</span>}<span className="text-sm truncate">{q.label}</span>{q.key===best&&ready&&<span className="text-[10px] uppercase text-blue-600 border border-blue-200 rounded px-1">best value</span>}</div>
+            <div className="text-[11px] text-stone-500">{ready&&days?(<span className="flex items-center gap-1"><Calendar className="w-3 h-3"/>{days} business day{days>1?"s":""}{eta?` · arrives ${fmtDeliv(eta)}`:""}</span>):""}</div>
+          </div>
+          {showCost&&<div className="text-right font-mono hidden sm:block"><div className="text-[10px] uppercase tracking-widest text-stone-400">cost</div><div className="text-sm text-stone-500">{ready?money(q.cost):"—"}</div></div>}
+          <div className="text-right font-mono"><div className="text-base font-semibold text-stone-900">{ready?money(sell):"—"}</div></div>
+          {action&&<button onClick={()=>action(q)} disabled={!ready} className={`shrink-0 w-32 text-sm rounded px-3 py-2 font-medium flex items-center justify-center gap-1.5 disabled:opacity-40 ${bought===q.key?"bg-blue-600 text-white":"bg-stone-900 text-white hover:bg-stone-800"}`}>{bought===q.key?<><Check className="w-4 h-4"/>{doneLabel}</>:<><Printer className="w-4 h-4"/>{label}</>}</button>}
+        </div>
+        {isOpen&&ready&&<div className="px-4 pb-3 pt-1 border-t border-stone-100">
+          <div className="text-[10px] uppercase tracking-widest text-stone-400 mb-1.5">Rate breakdown{live?"":" · estimated"}</div>
+          <div className="space-y-1">
+            {comps.map((c,i)=><div key={i} className="flex justify-between text-[13px]"><span className="text-stone-600">{c.label}</span><span className="font-mono text-stone-700">{money(c.amount)}</span></div>)}
+            <div className="flex justify-between text-[13px] border-t border-stone-200 pt-1 mt-1 font-semibold"><span>Total</span><span className="font-mono">{money(sell)}</span></div>
+          </div>
+          {eta&&<div className="text-[11px] text-stone-400 mt-2 flex items-center gap-1"><Calendar className="w-3 h-3"/>Estimated delivery {fmtDeliv(eta)} · {days} business day{days>1?"s":""} in transit</div>}
+        </div>}
+      </div>
+    );
+  };
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -549,23 +657,36 @@ function Orders({orders,setOrders,goShip,client,settings,onShipped}){
   const [filter,setFilter]=useState("all");
   const [q,setQ]=useState("");
   const [open,setOpen]=useState(null);
-  const list=orders.filter(o=>(filter==="all"||o.status===filter)&&(o.name+o.customer+o.city).toLowerCase().includes(q.toLowerCase()));
+  const [sort,setSort]=useState("date");
+  const [adding,setAdding]=useState(false);
+  const SOURCE_TONE={Shopify:"green",Amazon:"amber",eBay:"blue",Manual:"stone"};
+  const filtered=orders.filter(o=>(filter==="all"||o.status===filter)&&(o.name+o.customer+o.city+(o.source||"")).toLowerCase().includes(q.toLowerCase()));
+  const sorted=[...filtered].sort((a,b)=>{
+    if(sort==="total")return parseFloat(b.total||0)-parseFloat(a.total||0);
+    if(sort==="customer")return (a.customer||"").localeCompare(b.customer||"");
+    if(sort==="state")return (a.state||"").localeCompare(b.state||"");
+    if(sort==="weight")return (b.weight||0)-(a.weight||0);
+    if(sort==="source")return (a.source||"").localeCompare(b.source||"");
+    return String(b.id).localeCompare(String(a.id)); // date / newest
+  });
   const ship=(o)=>goShip({receiver:{name:o.customer,company:o.company,zip:o.zip,state:o.state,city:o.city,address1:o.address1,phone:o.phone,email:o.email},weight:o.weight,reference:o.name,fromOrderId:o.id});
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex bg-stone-100 rounded-lg p-0.5 text-sm">{["all","unfulfilled","fulfilled"].map(f=><button key={f} onClick={()=>setFilter(f)} className={`px-3 py-1.5 rounded-md capitalize ${filter===f?"bg-white shadow-sm text-stone-900 font-medium":"text-stone-500"}`}>{f}</button>)}</div>
-        <div className="flex-1 relative"><Search className="w-4 h-4 absolute left-2.5 top-2.5 text-stone-400"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search orders" className="w-full bg-white border border-stone-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:border-blue-500"/></div>
-        <Badge tone="blue">{orders.filter(o=>o.status==="unfulfilled").length} to ship</Badge>
+        <div className="flex-1 relative min-w-0"><Search className="w-4 h-4 absolute left-2.5 top-2.5 text-stone-400"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search orders" className="w-full bg-white border border-stone-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:border-blue-500"/></div>
+        <div className="flex items-center gap-1.5 text-sm"><span className="text-stone-500">Sort</span><select value={sort} onChange={e=>setSort(e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500"><option value="date">Newest</option><option value="total">Order total</option><option value="customer">Customer</option><option value="state">Dest. state</option><option value="weight">Weight</option><option value="source">Source</option></select></div>
+        <button onClick={()=>setAdding(true)} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded px-3 py-2 font-medium hover:bg-stone-800"><Plus className="w-4 h-4"/>New order</button>
       </div>
+      {adding&&<NewOrderForm onClose={()=>setAdding(false)} onCreate={(o)=>{setOrders(p=>[o,...p]);setAdding(false);}}/>}
       <div className="border border-stone-200 rounded-lg overflow-hidden bg-white divide-y divide-stone-100">
-        {list.length===0&&<div className="p-8 text-center text-sm text-stone-400">No orders.</div>}
-        {list.map(o=>(
+        {sorted.length===0&&<div className="p-8 text-center text-sm text-stone-400">No orders.</div>}
+        {sorted.map(o=>(
           <div key={o.id}>
             <div className="flex items-center gap-3 px-4 py-3 hover:bg-stone-50 cursor-pointer" onClick={()=>setOpen(open===o.id?null:o.id)}>
               <ChevronRight className={`w-4 h-4 text-stone-400 transition-transform ${open===o.id?"rotate-90":""}`}/>
               <div className="w-16 font-semibold text-sm">{o.name}</div>
-              <div className="flex-1 min-w-0"><div className="text-sm text-stone-800 truncate">{o.customer}</div><div className="text-[11px] text-stone-400 truncate">{o.items}</div></div>
+              <div className="flex-1 min-w-0"><div className="text-sm text-stone-800 truncate flex items-center gap-1.5">{o.customer}{o.source&&<Badge tone={SOURCE_TONE[o.source]||"stone"}>{o.source}</Badge>}</div><div className="text-[11px] text-stone-400 truncate">{o.items}</div></div>
               <div className="text-xs text-stone-500 hidden sm:block w-28 truncate">{o.city}, {o.state}</div>
               <div className="font-mono text-sm w-16 text-right">${o.total}</div>
               <Badge tone={o.status==="fulfilled"?"green":"amber"}>{o.status}</Badge>
@@ -575,6 +696,35 @@ function Orders({orders,setOrders,goShip,client,settings,onShipped}){
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+function NewOrderForm({onClose,onCreate}){
+  const [f,setF]=useState({customer:"",company:"",address1:"",city:"",state:"",zip:"",phone:"",email:"",items:"",weight:1,total:"",source:"Manual"});
+  const set=(k,v)=>setF({...f,[k]:v});
+  const create=()=>{
+    if(!f.customer&&!f.zip)return;
+    const n=Math.floor(1000+Math.random()*9000);
+    onCreate({id:Date.now(),name:"#"+n,...f,weight:+f.weight||1,total:f.total||"0.00",status:"unfulfilled",date:new Date().toLocaleDateString(undefined,{month:"numeric",day:"numeric"})});
+  };
+  return (
+    <div className="border border-stone-200 rounded-lg bg-white p-4 space-y-3">
+      <div className="flex items-center justify-between"><div className="text-sm font-semibold text-stone-700">New order</div><button onClick={onClose} className="text-stone-400 hover:text-stone-700"><X className="w-4 h-4"/></button></div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <Field label="Customer"><Input value={f.customer} onChange={e=>set("customer",e.target.value)}/></Field>
+        <Field label="Company"><Input value={f.company} onChange={e=>set("company",e.target.value)}/></Field>
+        <Field label="Phone"><Input value={f.phone} onChange={e=>set("phone",e.target.value)}/></Field>
+        <Field label="Email"><Input value={f.email} onChange={e=>set("email",e.target.value)}/></Field>
+        <div className="col-span-2 sm:col-span-4"><Field label="Address"><Input value={f.address1} onChange={e=>set("address1",e.target.value)}/></Field></div>
+        <Field label="City"><Input value={f.city} onChange={e=>set("city",e.target.value)}/></Field>
+        <Field label="State"><Input value={f.state} onChange={e=>set("state",e.target.value)}/></Field>
+        <Field label="ZIP"><Input value={f.zip} onChange={e=>set("zip",e.target.value)}/></Field>
+        <Field label="Weight (lb)"><Input type="number" value={f.weight} onChange={e=>set("weight",e.target.value)}/></Field>
+        <div className="col-span-2"><Field label="Items"><Input value={f.items} onChange={e=>set("items",e.target.value)}/></Field></div>
+        <Field label="Order total $"><Input value={f.total} onChange={e=>set("total",e.target.value)}/></Field>
+        <Field label="Source"><Select value={f.source} onChange={e=>set("source",e.target.value)}><option>Manual</option><option>Shopify</option><option>Amazon</option><option>eBay</option></Select></Field>
+      </div>
+      <button onClick={create} className="text-sm bg-stone-900 text-white rounded px-4 py-2 font-medium hover:bg-stone-800">Create order</button>
     </div>
   );
 }
@@ -609,6 +759,9 @@ function OrderDetail({o,setOrders,client,settings,onShipped,goShip}){
         <div className="col-span-2"><div className="text-[10px] uppercase tracking-widest text-stone-400">Ship to</div><div className="text-sm text-stone-800">{o.address1}, {o.city}, {o.state} {o.zip}</div></div>
         <Info k="Order total" v={`$${o.total}`}/>
         <Info k="SKU" v={o.sku}/>
+        <Info k="Source" v={o.source}/>
+        <Info k="Requested service" v={o.shippingService}/>
+        <Info k="Order date" v={o.date}/>
         <div className="col-span-2 sm:col-span-4"><div className="text-[10px] uppercase tracking-widest text-stone-400">Items</div><div className="text-sm text-stone-800">{o.items}</div></div>
       </div>
 
@@ -623,6 +776,7 @@ function OrderDetail({o,setOrders,client,settings,onShipped,goShip}){
           <div className="flex-1"/>
           <button onClick={()=>goShip(o)} className="text-sm bg-stone-200 text-stone-700 rounded px-3 py-1.5 font-medium hover:bg-stone-300 flex items-center gap-1.5"><Edit3 className="w-3.5 h-3.5"/>Open in Ship tab</button>
         </div>
+        {(o.shippingService||o.source)&&<div className="text-[12px] text-stone-500 flex items-center gap-1.5 -mt-1"><Truck className="w-3.5 h-3.5 text-stone-400"/>Buyer selected <b className="text-stone-700">{o.shippingService||"Standard"}</b>{o.source?` from ${o.source}`:""} — match it or pick the best rate below.</div>}
         <ServiceList quotes={quotes} best={best} bought={bought} action={ready?printHere:null} label="Buy & print" doneLabel="Printed" ready={ready}/>
         {done&&<div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2"><CheckCircle2 className="w-4 h-4"/>Label created — order moved to Shipments.</div>}
       </>)}
@@ -838,6 +992,27 @@ function Batch({orders,setOrders,client,rules,onShipped}){
   const [rule,setRule]=useState("cheapest");
   const [groupBy,setGroupBy]=useState("none");
   const [done,setDone]=useState(0);
+  const [msg,setMsg]=useState("");
+  const importCSV=(e)=>{
+    const file=e.target.files&&e.target.files[0]; if(!file)return;
+    const reader=new FileReader();
+    reader.onload=(ev)=>{
+      const text=String(ev.target.result||"");
+      const lines=text.split(/\r?\n/).filter(l=>l.trim());
+      if(!lines.length){setMsg("Empty file");return;}
+      const head=lines[0].split(",").map(h=>h.trim().toLowerCase().replace(/"/g,""));
+      const col=(names)=>head.findIndex(h=>names.includes(h));
+      const idx={customer:col(["customer","name","contact","ship to"]),company:col(["company","business"]),address1:col(["address","address1","street","address 1"]),city:col(["city","town"]),state:col(["state","province"]),zip:col(["zip","postal","postal code","zipcode"]),phone:col(["phone"]),email:col(["email"]),weight:col(["weight","lbs","lb"]),items:col(["items","item","description","product"]),total:col(["total","order total","amount"]),sku:col(["sku"]),service:col(["service","shipping","shippingservice","shipping service"])};
+      const hasHeader=idx.zip>=0||idx.customer>=0||idx.address1>=0;
+      const rows=hasHeader?lines.slice(1):lines;
+      const parsed=rows.map((line,i)=>{const c=line.split(",").map(x=>x.trim().replace(/^"|"$/g,""));const g=(k,d)=>idx[k]>=0?(c[idx[k]]||""):(c[d]||"");const n=Math.floor(1000+Math.random()*9000);return {id:Date.now()+i,name:"#"+n,customer:g("customer",0),company:g("company"),address1:g("address1",1),city:g("city",2),state:g("state",3),zip:g("zip",4),phone:g("phone"),email:g("email"),weight:+g("weight")||1,items:g("items"),total:g("total")||"0.00",sku:g("sku"),shippingService:g("service")||"Standard",source:"CSV import",status:"unfulfilled",date:new Date().toLocaleDateString(undefined,{month:"numeric",day:"numeric"})};}).filter(r=>r.zip||r.customer);
+      setOrders(p=>[...parsed,...p]);
+      setMsg(`Imported ${parsed.length} order${parsed.length===1?"":"s"} — selected and ready to print.`);
+      setSel(new Set(parsed.map(o=>o.id)));
+      setTimeout(()=>setMsg(""),4000);
+    };
+    reader.readAsText(file); e.target.value="";
+  };
   const toggle=id=>setSel(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
   const all=()=>setSel(s=>s.size===pool.length?new Set():new Set(pool.map(o=>o.id)));
   const rateFor=(o)=>{const qs=quoteRates({fromZip:client.origin,toZip:o.zip,L:12,W:9,H:4,weight:o.weight,residential:true});const pool2=rule==="ground"?qs.filter(q=>/Ground|Home/.test(q.label)):qs;const pick=pool2.sort((a,b)=>a.cost-b.cost)[0]||qs[0];return {...pick,sell:Math.round(pick.cost*(1+client.markup/100)*100)/100};};
@@ -861,12 +1036,15 @@ function Batch({orders,setOrders,client,rules,onShipped}){
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-sm font-semibold text-stone-700 flex items-center gap-2"><Layers className="w-4 h-4"/>Batch label printing</h2>
+        <label className="flex items-center gap-1.5 text-sm bg-stone-200 text-stone-700 rounded px-2.5 py-1.5 font-medium hover:bg-stone-300 cursor-pointer"><Upload className="w-4 h-4"/>Import CSV<input type="file" accept=".csv,text/csv" onChange={importCSV} className="hidden"/></label>
         <div className="flex-1"/>
         <span className="text-sm text-stone-500">Group by</span>
         <select value={groupBy} onChange={e=>setGroupBy(e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500"><option value="none">None</option><option value="sku">SKU</option><option value="product">Product name</option><option value="zone">Zone</option><option value="service">Service</option><option value="state">Dest. state</option></select>
         <span className="text-sm text-stone-500">Rate rule</span>
         <select value={rule} onChange={e=>setRule(e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500"><option value="cheapest">Cheapest overall</option><option value="ground">Cheapest ground</option></select>
       </div>
+      <div className="text-[11px] text-stone-400">CSV columns recognized: customer, company, address, city, state, zip, phone, email, weight, items, total, sku, service (header row optional).</div>
+      {msg&&<div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5 text-sm text-emerald-700 flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/>{msg}</div>}
       {done>0&&<div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-700 flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/>Printed {done} labels — orders moved to Shipments.</div>}
       <div className="border border-stone-200 rounded-lg overflow-hidden bg-white divide-y divide-stone-100">
         <div className="flex items-center gap-3 px-4 py-2 bg-stone-50 text-[11px] uppercase tracking-widest text-stone-400"><input type="checkbox" checked={sel.size===pool.length&&pool.length>0} onChange={all} className="accent-blue-600"/><div className="w-14">Order</div><div className="flex-1">Customer</div><div className="w-28 hidden sm:block">Service</div><div className="w-20 text-right">Rate</div></div>
@@ -1086,13 +1264,15 @@ function CheckoutRates({settings,setSettings,client}){
 /* ════════ SETTINGS ════════ */
 function Settings({settings,setSettings,accounts,setAccounts,clients,setClients,rules,setRules,emails,shipments,setShipments,manifests,setManifests,client}){
   const [sec,setSec]=useState("carriers");
-  const secs=[["carriers","Carrier accounts",Plug],["boxes","Package sizes",Boxes],["checkout","Checkout rates",ShoppingBag],["manifests","Manifests",FileText],["reports","Reports",TrendingUp],["automation","Automation rules",Zap],["notifications","Email automation",Mail],["clients","Clients & markup",Users],["billing","Billing",CreditCard],["integrations","Integrations",Layers],["subscription","Subscription",Star],["company","Company",Building2]];
+  const secs=[["carriers","Carrier accounts",Plug],["boxes","Package sizes",Boxes],["boxlogic","Box logic",Package],["printer","Printer settings",Printer],["checkout","Checkout rates",ShoppingBag],["manifests","Manifests",FileText],["reports","Reports",TrendingUp],["automation","Automation rules",Zap],["notifications","Email automation",Mail],["clients","Clients & markup",Users],["billing","Billing",CreditCard],["integrations","Integrations",Layers],["subscription","Subscription",Star],["company","Company",Building2]];
   return (
     <div className="flex flex-col md:flex-row gap-6">
       <aside className="md:w-56 shrink-0 space-y-1">{secs.map(([id,l,Icon])=><button key={id} onClick={()=>setSec(id)} className={`w-full flex items-center gap-2 text-sm rounded-lg px-3 py-2 text-left ${sec===id?"bg-white border border-stone-200 text-stone-900 font-medium":"text-stone-500 hover:bg-stone-100"}`}><Icon className="w-4 h-4"/>{l}</button>)}</aside>
       <div className="flex-1 min-w-0">
         {sec==="carriers"&&<CarrierAccounts accounts={accounts} setAccounts={setAccounts} settings={settings} setSettings={setSettings}/>}
         {sec==="boxes"&&<BoxesSettings settings={settings} setSettings={setSettings}/>}
+        {sec==="boxlogic"&&<BoxLogic settings={settings} setSettings={setSettings}/>}
+        {sec==="printer"&&<PrinterSettings settings={settings} setSettings={setSettings}/>}
         {sec==="checkout"&&<CheckoutRates settings={settings} setSettings={setSettings} client={client}/>}
         {sec==="manifests"&&<Manifests shipments={shipments} setShipments={setShipments} manifests={manifests} setManifests={setManifests}/>}
         {sec==="reports"&&<Reports shipments={shipments}/>}
@@ -1136,6 +1316,83 @@ function BoxesSettings({settings,setSettings}){
       </div>
       <button onClick={add} className="text-sm bg-stone-900 text-white rounded px-4 py-2 font-medium">Add box</button>
     </Panel>
+  </div>);
+}
+function BoxLogic({settings,setSettings}){
+  const bl=settings.boxLogic||{mode:"smallest",dimDivisor:139,padding:0.5,fallbackL:12,fallbackW:9,fallbackH:4,allowOverride:true};
+  const set=(patch)=>setSettings({...settings,boxLogic:{...bl,...patch}});
+  const boxes=settings.boxes||SEED_BOXES;
+  return (<div className="max-w-2xl space-y-4">
+    <p className="text-sm text-stone-500">Box logic decides which box each order ships in and how billable weight is figured. It runs automatically on the Ship tab, in Batch, and for live checkout rates.</p>
+    <Panel title="Cartonization">
+      <Field label="How a box is chosen">
+        <Select value={bl.mode} onChange={e=>set({mode:e.target.value})}>
+          <option value="smallest">Smallest box that fits the items (recommended)</option>
+          <option value="single">Always use one default box</option>
+          <option value="weight">Pick by weight tier</option>
+        </Select>
+      </Field>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <Field label="Default L"><Input type="number" value={bl.fallbackL} onChange={e=>set({fallbackL:+e.target.value})}/></Field>
+        <Field label="Default W"><Input type="number" value={bl.fallbackW} onChange={e=>set({fallbackW:+e.target.value})}/></Field>
+        <Field label="Default H"><Input type="number" value={bl.fallbackH} onChange={e=>set({fallbackH:+e.target.value})}/></Field>
+        <Field label="Padding (in)"><Input type="number" value={bl.padding} onChange={e=>set({padding:+e.target.value})}/></Field>
+      </div>
+      <p className="text-[11px] text-stone-400">Padding is the spare room added around items before choosing a box, so fragile or odd-shaped goods still fit.</p>
+    </Panel>
+    <Panel title="Dimensional weight">
+      <Field label="DIM divisor">
+        <Select value={bl.dimDivisor} onChange={e=>set({dimDivisor:+e.target.value})}>
+          <option value={139}>139 — standard domestic (FedEx/UPS)</option>
+          <option value={166}>166 — lighter DIM (some contracts)</option>
+          <option value={250}>250 — DHL / international</option>
+        </Select>
+      </Field>
+      <p className="text-[11px] text-stone-400">Billable weight = the greater of actual weight and (L×W×H ÷ divisor). A lower divisor means higher dim weight. The carrier charges on whichever is larger.</p>
+      <div className="bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-[12px] text-stone-600 font-mono">Example: a 12×9×4 box ÷ {bl.dimDivisor} = {(12*9*4/bl.dimDivisor).toFixed(1)} lb dim weight</div>
+    </Panel>
+    <Panel title="Options">
+      <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={bl.allowOverride} onChange={e=>set({allowOverride:e.target.checked})} className="accent-blue-600"/>Let users override the chosen box on the Ship tab</label>
+      <div className="text-[12px] text-stone-500">Box catalog in use: <b>{boxes.length}</b> boxes (edit them under <b>Package sizes</b>).</div>
+    </Panel>
+  </div>);
+}
+function PrinterSettings({settings,setSettings}){
+  const pr=settings.printer||{labelSize:"4x6",format:"PDF",printer:"",packingSlip:true,autoPrint:false,slipSize:"letter",rotate:false};
+  const set=(patch)=>setSettings({...settings,printer:{...pr,...patch}});
+  return (<div className="max-w-2xl space-y-4">
+    <p className="text-sm text-stone-500">Controls how labels are generated and printed when you buy a label or run a batch.</p>
+    <Panel title="Label">
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Label size">
+          <Select value={pr.labelSize} onChange={e=>set({labelSize:e.target.value})}>
+            <option value="4x6">4×6 — thermal (recommended)</option>
+            <option value="4x8">4×8 — thermal with packing slip</option>
+            <option value="letter">8.5×11 — laser/inkjet sheet</option>
+          </Select>
+        </Field>
+        <Field label="File format">
+          <Select value={pr.format} onChange={e=>set({format:e.target.value})}>
+            <option value="PDF">PDF</option>
+            <option value="PNG">PNG</option>
+            <option value="ZPL">ZPL (Zebra thermal)</option>
+          </Select>
+        </Field>
+      </div>
+      <Field label="Default printer (optional)"><Input value={pr.printer} onChange={e=>set({printer:e.target.value})} placeholder="e.g. Zebra ZP 450"/></Field>
+      <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={pr.rotate} onChange={e=>set({rotate:e.target.checked})} className="accent-blue-600"/>Rotate label 180° (for some thermal printers)</label>
+      <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={pr.autoPrint} onChange={e=>set({autoPrint:e.target.checked})} className="accent-blue-600"/>Auto-open the print dialog after a label is bought</label>
+    </Panel>
+    <Panel title="Packing slip">
+      <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={pr.packingSlip} onChange={e=>set({packingSlip:e.target.checked})} className="accent-blue-600"/>Generate a packing slip with each label</label>
+      <Field label="Packing slip size">
+        <Select value={pr.slipSize} onChange={e=>set({slipSize:e.target.value})}>
+          <option value="letter">8.5×11 Letter</option>
+          <option value="4x6">4×6</option>
+        </Select>
+      </Field>
+    </Panel>
+    <div className="flex items-center gap-2 text-[12px] text-stone-400"><Printer className="w-4 h-4"/>Thermal sizes (4×6 / ZPL) print fastest on label printers; choose Letter/PDF if you print on a standard office printer.</div>
   </div>);
 }
 function Notifications({settings,setSettings,emails}){
@@ -1286,14 +1543,14 @@ function CarrierAccounts({accounts,setAccounts,settings,setSettings}){
   const plat=settings.platforms||PLATFORM_DEFAULTS;
   const togglePlat=(id)=>setSettings({...settings,platforms:{...plat,[id]:!plat[id]}});
   const add=()=>{const id="a"+Date.now();setAccounts(a=>[...a,{id,...d,status:"connected",mode:"own"}]);setAdding(false);setD({label:"",provider:"england",account:"",apiKey:"",secret:"",customerId:""});};
-  const eng=settings.england||{enabled:false,base:"https://englandship.rocksolidinternet.com",apiKey:"",customerId:"",account:""};
+  const eng=settings.england||{enabled:false,base:"https://englandship.rocksolidinternet.com",apiKey:"",customerId:"",integrationId:"",account:""};
   const setEng=(patch)=>setSettings({...settings,england:{...eng,...patch}});
   const [test,setTest]=useState(null); // {ok,msg,sample}
   const runTest=async()=>{
     setTest({loading:true});
     const res=await getLiveRates({fromZip:settings.sender?.zip||"84003",toZip:"90210",residential:true,pieces:[{weight:3,L:12,W:9,H:4}]},{...eng,enabled:true});
     if(res&&res.live&&res.rates&&res.rates.length) setTest({ok:true,msg:`Connected — ${res.rates.length} live services returned (cheapest ${money(res.rates[0].cost)}).`});
-    else setTest({ok:false,msg:(res&&res.error)||"No live rates. On the chat preview there's no server — this works once deployed to Netlify."});
+    else setTest({ok:false,msg:(res&&res.error)||"No live rates returned.",detail:res&&(res.england_response||res.detail)});
   };
   return (<div className="max-w-2xl space-y-5">
     <div>
@@ -1306,14 +1563,16 @@ function CarrierAccounts({accounts,setAccounts,settings,setSettings}){
         </label>
         <div className="grid sm:grid-cols-2 gap-3">
           <Field label="England API key"><Input type="password" value={eng.apiKey} onChange={e=>setEng({apiKey:e.target.value})} placeholder="paste your key"/></Field>
-          <Field label="England customer ID"><Input value={eng.customerId} onChange={e=>setEng({customerId:e.target.value})} placeholder="e.g. 20601652"/></Field>
-          <Field label="FedEx account #"><Input value={eng.account} onChange={e=>setEng({account:e.target.value})} placeholder="20601652"/></Field>
+          <Field label="England customer ID"><Input value={eng.customerId} onChange={e=>setEng({customerId:e.target.value})} placeholder="e.g. 20602362"/></Field>
+          <Field label="Integration ID (for printing labels)"><Input value={eng.integrationId||""} onChange={e=>setEng({integrationId:e.target.value})} placeholder="e.g. 3214"/></Field>
           <Field label="API base URL"><Input value={eng.base} onChange={e=>setEng({base:e.target.value})}/></Field>
         </div>
+        <p className="text-[11px] text-stone-400 -mt-1">The Integration ID enables real label printing. In Webship: gear/settings → eCommerce Integrations → Add → Rest API → Save New Integration → copy the ID. Turn on auto-ship for that integration so labels book automatically.</p>
         <div className="flex flex-wrap items-center gap-3">
           <button onClick={runTest} disabled={!eng.apiKey||!eng.customerId} className="text-sm bg-stone-900 text-white rounded px-4 py-2 font-medium hover:bg-stone-800 disabled:opacity-40 flex items-center gap-1.5">{test&&test.loading?<><Loader2 className="w-4 h-4 animate-spin"/>Testing…</>:<><ShieldCheck className="w-4 h-4"/>Test connection</>}</button>
           {test&&!test.loading&&<span className={`text-xs flex items-center gap-1.5 ${test.ok?"text-emerald-700":"text-blue-600"}`}>{test.ok?<CheckCircle2 className="w-4 h-4"/>:<AlertTriangle className="w-4 h-4"/>}{test.msg}</span>}
         </div>
+        {test&&!test.loading&&!test.ok&&test.detail&&<div className="text-[11px] text-stone-500 font-mono bg-stone-100 border border-stone-200 rounded p-2 break-words whitespace-pre-wrap">England said: {typeof test.detail==="string"?test.detail:JSON.stringify(test.detail)}</div>}
         <p className="text-[11px] text-stone-400">For production, store the API key as a Netlify env var (<span className="font-mono">ENGLAND_API_KEY</span>, <span className="font-mono">ENGLAND_CUSTOMER_ID</span>) instead of here, so it never ships to the browser. England authenticates with the API key + customer ID; if you only have the FedEx account number, try it as the customer ID or confirm the key with your England rep.</p>
       </div>
     </div>
@@ -1464,13 +1723,39 @@ function Clients({clients,setClients}){
 }
 
 /* ════════ PRIMITIVES ════════ */
-function AddressCard({title,data,set,required,residential,setResidential}){
+function AddressCard({title,data,set,required,residential,setResidential,addresses}){
   const f=(k,v)=>set({...data,[k]:v});
-  const Cell=({label,k,span,req})=>(<div className={`px-2 py-1.5 ${req&&!data[k]?"bg-blue-50":"bg-white"} ${span||""}`}><div className={`text-[9px] uppercase tracking-wide ${req&&!data[k]?"text-blue-600":"text-stone-400"}`}>{label}</div>{k==="country"?<select value={data.country||"United States"} onChange={e=>f("country",e.target.value)} className="w-full bg-transparent text-[13px] text-stone-900 outline-none mt-0.5">{COUNTRIES.map(c=><option key={c}>{c}</option>)}</select>:<input value={data[k]||""} onChange={e=>f(k,e.target.value)} className="w-full bg-transparent text-[13px] text-stone-900 outline-none mt-0.5 placeholder-stone-300"/>}</div>);
-  return (<div><div className="flex items-center justify-between mb-1.5"><span className="text-blue-600 font-semibold text-sm">{title}</span>{setResidential&&<label className="flex items-center gap-1.5 text-[11px] text-stone-500"><input type="checkbox" checked={residential} onChange={e=>setResidential(e.target.checked)} className="accent-blue-600"/>Residential</label>}</div>
+  const [q,setQ]=useState("");
+  const [open,setOpen]=useState(false);
+  const matches=(addresses||[]).filter(a=>q.trim()&&[a.name,a.company,a.city,a.zip,a.address1].filter(Boolean).some(v=>String(v).toLowerCase().includes(q.toLowerCase()))).slice(0,6);
+  const pick=(a)=>{set({...data,name:a.name||"",company:a.company||"",address1:a.address1||"",city:a.city||"",state:a.state||"",zip:a.zip||"",phone:a.phone||"",email:a.email||data.email||""});setQ("");setOpen(false);};
+  // cell() is a plain render helper (NOT a component) so inputs never remount → focus is kept while typing
+  const cell=(label,k,span,req)=>(
+    <div key={k} className={`px-2 py-1.5 ${req&&!data[k]?"bg-blue-50":"bg-white"} ${span||""}`}>
+      <div className={`text-[9px] uppercase tracking-wide ${req&&!data[k]?"text-blue-600":"text-stone-400"}`}>{label}</div>
+      {k==="country"
+        ? <select value={data.country||"United States"} onChange={e=>f("country",e.target.value)} className="w-full bg-transparent text-[13px] text-stone-900 outline-none mt-0.5">{COUNTRIES.map(c=><option key={c}>{c}</option>)}</select>
+        : <input value={data[k]||""} onChange={e=>f(k,e.target.value)} className="w-full bg-transparent text-[13px] text-stone-900 outline-none mt-0.5 placeholder-stone-300"/>}
+    </div>
+  );
+  return (<div className="relative">
+    <div className="flex items-center justify-between mb-1.5">
+      <span className="text-blue-600 font-semibold text-sm">{title}</span>
+      {setResidential&&<label className="flex items-center gap-1.5 text-[11px] cursor-pointer"><input type="checkbox" checked={residential} onChange={e=>setResidential(e.target.checked)} className="accent-blue-600"/>{residential?<span className="flex items-center gap-1 text-blue-700"><Home className="w-3.5 h-3.5"/>Residential</span>:<span className="flex items-center gap-1 text-stone-600"><Building2 className="w-3.5 h-3.5"/>Commercial</span>}</label>}
+    </div>
+    {addresses&&addresses.length>0&&(
+      <div className="relative mb-1.5">
+        <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400"/>
+        <input value={q} onChange={e=>{setQ(e.target.value);setOpen(true);}} onFocus={()=>setOpen(true)} onBlur={()=>setTimeout(()=>setOpen(false),150)} placeholder="Quick-fill from address book…" className="w-full bg-white border border-stone-200 rounded pl-8 pr-2 py-1.5 text-[13px] outline-none focus:border-blue-500 placeholder-stone-300"/>
+        {open&&matches.length>0&&<div className="absolute z-30 left-0 right-0 top-full mt-1 bg-white border border-stone-200 rounded-lg shadow-lg max-h-56 overflow-auto divide-y divide-stone-100">
+          {matches.map(a=><button key={a.id} onMouseDown={()=>pick(a)} className="w-full text-left px-3 py-2 hover:bg-blue-50"><div className="text-sm font-medium text-stone-800">{a.name}{a.company?` · ${a.company}`:""}</div><div className="text-[11px] text-stone-400">{a.address1}{a.address1?", ":""}{a.city} {a.state} {a.zip}</div></button>)}
+        </div>}
+      </div>
+    )}
     <div className="grid grid-cols-6 gap-px bg-stone-200 border border-stone-200 rounded-lg overflow-hidden">
-      <Cell label="Country" k="country" span="col-span-6"/><Cell label="Name" k="name" span="col-span-3" req={required}/><Cell label="Company" k="company" span="col-span-3"/><Cell label="Zip" k="zip" span="col-span-2" req={required}/><Cell label="State" k="state" span="col-span-2" req={required}/><Cell label="City" k="city" span="col-span-2" req={required}/><Cell label="Address 1" k="address1" span="col-span-6" req={required}/><Cell label="Address 2" k="address2" span="col-span-3"/><Cell label="Address 3" k="address3" span="col-span-3"/><Cell label="Phone" k="phone" span="col-span-3"/><Cell label="Email" k="email" span="col-span-3"/>
-    </div></div>);
+      {cell("Country","country","col-span-6")}{cell("Name","name","col-span-3",required)}{cell("Company","company","col-span-3")}{cell("Zip","zip","col-span-2",required)}{cell("State","state","col-span-2",required)}{cell("City","city","col-span-2",required)}{cell("Address 1","address1","col-span-6",required)}{cell("Address 2","address2","col-span-3")}{cell("Address 3","address3","col-span-3")}{cell("Phone","phone","col-span-3")}{cell("Email","email","col-span-3")}
+    </div>
+  </div>);
 }
 function PkgInput({label,w,...p}){return <div><div className="text-[10px] uppercase tracking-widest text-stone-500">{label}</div><input {...p} type="number" className={`${w||"w-14"} bg-white border border-stone-300 rounded px-2 py-1 text-sm font-mono text-stone-900 outline-none focus:border-blue-500`}/></div>;}
 function Panel({title,children}){return <div className="border border-stone-200 rounded-lg bg-white p-4 space-y-3"><div className="text-[11px] uppercase tracking-widest text-stone-400">{title}</div>{children}</div>;}
