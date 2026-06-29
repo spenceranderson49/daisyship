@@ -111,6 +111,43 @@ async function pollLabel(england,orderId,onUpdate){
   return {ok:true,booked:false,timedOut:true};
 }
 
+/* ════════ FEDEX (transit times + address validation) ════════ */
+const FEDEX_ENDPOINT="/.netlify/functions/fedex";
+async function fedexCall(payload,timeout=15000){
+  const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),timeout);
+  try{
+    const r=await fetch(FEDEX_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),signal:ctrl.signal});
+    let d=null;try{d=await r.json();}catch(e){try{d={ok:false,error:await r.text()};}catch(e2){d={ok:false,error:"Bad response"};}}
+    return d||{ok:false,error:"Empty response"};
+  }catch(e){return {ok:false,error:(e&&e.message)||"Network error"};}
+  finally{clearTimeout(t);}
+}
+// normalize a service label OR FedEx serviceType to a canonical key for matching
+function canonSvc(s){
+  const t=String(s||"").toLowerCase();
+  if(/home/.test(t)) return "home";
+  if(/first.?overnight|first_overnight/.test(t)) return "first_overnight";
+  if(/priority.?overnight|priority_overnight/.test(t)) return "priority_overnight";
+  if(/standard.?overnight|standard_overnight/.test(t)) return "standard_overnight";
+  if(/2.?day|two.?day|2_day/.test(t)) return "2day";
+  if(/express.?saver|saver|3.?day/.test(t)) return "express_saver";
+  if(/overnight/.test(t)) return "standard_overnight";
+  if(/priority/.test(t)) return "intl_priority";
+  if(/ground/.test(t)) return "ground";
+  return t.replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
+}
+async function fedexTransit(s){
+  const body={fromZip:s.fromZip,toZip:s.toZip,fromCountry:s.fromCountry||"US",toCountry:s.toCountry||"US",residential:!!s.residential,pieces:(s.pieces||[]).map(p=>({weight:+p.weight||1}))};
+  const res=await fedexCall(body);
+  if(!res||!res.ok||!Array.isArray(res.services)) return {};
+  const map={};
+  for(const sv of res.services){ const k=canonSvc(sv.serviceType); if(!map[k]||(sv.transitDays!=null)) map[k]={days:sv.transitDays,date:sv.deliveryDate,day:sv.deliveryDay,name:sv.serviceName}; }
+  return map;
+}
+async function fedexValidateAddress(addr){
+  return await fedexCall({action:"address",address:{address1:addr.address1,address2:addr.address2,city:addr.city,state:addr.state,zip:addr.zip,country:addr.country||"US"}});
+}
+
 /* ════════ SEED ════════ */
 const SEED_CLIENTS=[
   {id:"c1",name:"Sparkle in Pink",markup:18,origin:"84003",contact:"Spencer Anderson",email:"ops@sparkleinpink.com",phone:"801-555-0100",status:"active",since:"2025-09",plan:"Volume"},
@@ -548,15 +585,29 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
   const delLine=(i)=>setCustoms(c=>({...c,lines:c.lines.length>1?c.lines.filter((_,j)=>j!==i):c.lines}));
   const customsTotal=customs.lines.reduce((a,l)=>a+(+l.qty||0)*(+l.value||0),0);
 
-  /* auto-verify receiver address + classify commercial vs residential */
+  /* auto-verify receiver address + classify commercial vs residential via FedEx */
   useEffect(()=>{
     const core=receiver.address1&&/^\d{5}/.test(receiver.zip||"")&&receiver.city&&receiver.state;
     if(!core){setVerify(null);return;}
-    const r=validateAddress(receiver);
-    const type=(receiver.company&&receiver.company.trim())?"Commercial":"Residential";
-    setVerify({ok:r.ok,issues:r.issues,type});
-    setRes(type==="Residential");
-  },[receiver.address1,receiver.zip,receiver.city,receiver.state,receiver.company]);
+    let cancel=false;
+    setVerify({loading:true});
+    const t=setTimeout(async()=>{
+      const res=await fedexValidateAddress(receiver);
+      if(cancel)return;
+      if(res&&res.ok&&res.classification&&res.classification!=="UNKNOWN"){
+        const type=res.classification==="BUSINESS"?"Commercial":(res.classification==="RESIDENTIAL"?"Residential":"Mixed");
+        setVerify({ok:res.deliverable!==false,type,classification:res.classification,source:"FedEx"});
+        if(type!=="Mixed") setRes(type==="Residential");
+      } else {
+        // fall back to local heuristic if FedEx can't classify
+        const r=validateAddress(receiver);
+        const type=(receiver.company&&receiver.company.trim())?"Commercial":"Residential";
+        setVerify({ok:r.ok,issues:r.issues,type,source:res&&res.error?"estimate":""});
+        setRes(type==="Residential");
+      }
+    },700);
+    return ()=>{cancel=true;clearTimeout(t);};
+  },[receiver.address1,receiver.zip,receiver.city,receiver.state]);
 
   const applyOrder=(o)=>{setSelectedOrder(o.id);setReference(o.name);setReceiver({...empty,name:o.customer||"",company:o.company||"",zip:o.zip||"",state:o.state||"",city:o.city||"",address1:o.address1||"",phone:o.phone||"",email:o.email||""});setPieces([{weight:o.weight||1,L:12,W:9,H:4}]);};
   useEffect(()=>{ if(!prefill)return;
@@ -569,6 +620,13 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
   const shipment={fromZip:sender.zip||client.origin,toZip:receiver.zip,pieces,residential,signature,signatureOption:sigOption,intl};
   const localQuotes=()=>quoteRates(shipment).filter(q=>intl?true:(residential?q.key!=="fedex_ground":q.key!=="fedex_home"));
   const [rateSrc,setRateSrc]=useState({rates:[],live:false,loading:false,error:null});
+  const [fxTransit,setFxTransit]=useState({});
+  useEffect(()=>{
+    let cancel=false;
+    if(!ready){setFxTransit({});return;}
+    fedexTransit(shipment).then(m=>{ if(!cancel) setFxTransit(m||{}); });
+    return ()=>{cancel=true;};
+  },[receiver.zip,sender.zip,residential,JSON.stringify(pieces)]);
   useEffect(()=>{
     let cancel=false;
     if(!ready){setRateSrc({rates:localQuotes(),live:false,loading:false,error:null});return;}
@@ -582,7 +640,7 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
     } else setRateSrc({rates:localQuotes(),live:false,loading:false,error:null});
     return ()=>{cancel=true;};
   },[JSON.stringify(pieces),receiver.zip,sender.zip,residential,signature,intl,settings.england]);
-  const quotes=useMemo(()=>rateSrc.rates.map(q=>({...q,sell:Math.round(q.cost*(1+client.markup/100)*100)/100})).sort((a,b)=>a.sell-b.sell),[rateSrc,client.markup]);
+  const quotes=useMemo(()=>rateSrc.rates.map(q=>{const m=fxTransit[canonSvc(q.label)];return {...q,sell:Math.round(q.cost*(1+client.markup/100)*100)/100,fxDays:m?m.days:undefined,fxDate:m?m.date:undefined};}).sort((a,b)=>a.sell-b.sell),[rateSrc,client.markup,fxTransit]);
   const best=quotes[0]?.key;
 
   const buildRec=(q,carrier,extra)=>({id:Date.now(),date:new Date().toLocaleDateString(),tracking:(extra&&extra.tracking)||newTracking(carrier),carrier,service:q.label,recipient:{...receiver},sender:{...sender},fromZip:sender.zip,toZip:receiver.zip,weight:totalWeight,pieces:pieces.map(p=>({...p})),dims:pieces[0],insurance,cost:q.cost,sell:q.sell,billTo,thirdAcct,status:"Label created",lastScan:"Label created",eta:"—",onTime:true,reference,invoiceNo,poNo,residential,intl,bookNumber:extra&&extra.bookNumber,customs:intl?{...customs,total:customsTotal,ci:"CI-"+rnd(5)}:null});
@@ -654,11 +712,12 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
         </div>
         {intl&&<div className="flex items-center gap-2 text-sm text-[#006FBF] bg-[#E6F4FF] border border-[#99D6FF] rounded-lg px-3 py-2"><MapPin className="w-4 h-4"/>International shipment to <b>{receiver.country}</b> — FedEx &amp; DHL rates shown, customs info required below.</div>}
         <div className="flex flex-wrap items-center gap-3 text-xs">
-          {verify?(verify.ok
-            ?<span className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 font-medium"><CheckCircle2 className="w-3.5 h-3.5"/>Address verified</span>
-            :<span className="flex items-center gap-1.5 text-[#0086E0] bg-[#E6F4FF] border border-[#99D6FF] rounded-full px-2.5 py-1 font-medium"><AlertTriangle className="w-3.5 h-3.5"/>{verify.issues.join(" · ")}</span>)
-            :<span className="flex items-center gap-1.5 text-stone-400"><ShieldCheck className="w-3.5 h-3.5"/>Verifying as you type…</span>}
-          {verify&&<span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border ${verify.type==="Residential"?"text-[#006FBF] bg-[#E6F4FF] border-[#99D6FF]":"text-stone-700 bg-stone-100 border-stone-200"}`}>{verify.type==="Residential"?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{verify.type}</span>}
+          {!verify||verify.loading
+            ?<span className="flex items-center gap-1.5 text-stone-400"><Loader2 className="w-3.5 h-3.5 animate-spin"/>Checking address with FedEx…</span>
+            :(verify.ok
+              ?<span className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 font-medium"><CheckCircle2 className="w-3.5 h-3.5"/>{verify.source==="FedEx"?"FedEx-verified address":"Address verified"}</span>
+              :<span className="flex items-center gap-1.5 text-[#0086E0] bg-[#E6F4FF] border border-[#99D6FF] rounded-full px-2.5 py-1 font-medium"><AlertTriangle className="w-3.5 h-3.5"/>{verify.issues?verify.issues.join(" · "):"Address may be undeliverable"}</span>)}
+          {verify&&!verify.loading&&<span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border ${verify.type==="Residential"?"text-[#006FBF] bg-[#E6F4FF] border-[#99D6FF]":verify.type==="Mixed"?"text-amber-700 bg-amber-50 border-amber-200":"text-stone-700 bg-stone-100 border-stone-200"}`}>{verify.type==="Residential"?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{verify.type}{verify.source==="FedEx"?" · FedEx":""}</span>}
         </div>
 
         <div className="bg-stone-100 border border-stone-200 rounded-lg p-3 space-y-2">
@@ -796,8 +855,10 @@ function ServiceList({quotes,best,bought,action,label,doneLabel,showCost,ready=t
   const [open,setOpen]=useState(null);
   const Row=(q)=>{
     const isOpen=open===q.key;
-    const days=q.maxDays||q.minDays;
-    const eta=ready&&days?addBizDays(days):null;
+    const fxDate=q.fxDate?new Date(q.fxDate+"T00:00:00"):null;
+    const days=(q.fxDays!=null?q.fxDays:(q.maxDays||q.minDays));
+    const eta=ready?(fxDate||(days?addBizDays(days):null)):null;
+    const fxLive=q.fxDate||q.fxDays!=null;
     const sell=q.sell??q.cost;
     const factor=q.cost?sell/q.cost:1;
     let comps;
@@ -815,7 +876,7 @@ function ServiceList({quotes,best,bought,action,label,doneLabel,showCost,ready=t
           <button onClick={()=>setOpen(isOpen?null:q.key)} className="text-stone-400 shrink-0" title="Charge breakdown"><ChevronRight className={`w-4 h-4 transition-transform ${isOpen?"rotate-90":""}`}/></button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">{view==="cheapest"&&<span className={`text-[10px] font-bold w-10 shrink-0 ${CARRIER_TINT[q.carrier]}`}>{q.carrier}</span>}<span className="text-sm truncate">{q.label}</span>{q.key===best&&ready&&<span className="text-[10px] uppercase text-[#0086E0] border border-[#99D6FF] rounded px-1">best value</span>}</div>
-            <div className="text-[11px] text-stone-500">{ready&&days?(<span className="flex items-center gap-1"><Calendar className="w-3 h-3"/>{days} business day{days>1?"s":""}{eta?` · arrives ${fmtDeliv(eta)}`:""}</span>):""}</div>
+            <div className="text-[11px] text-stone-500">{ready&&(days||eta)?(<span className="flex items-center gap-1"><Calendar className="w-3 h-3"/>{days?`${days} business day${days>1?"s":""}`:""}{eta?`${days?" · ":""}arrives ${fmtDeliv(eta)}`:""}{fxLive?<span className="text-[#0086E0] font-medium ml-1">FedEx</span>:""}</span>):""}</div>
           </div>
           {showCost&&<div className="text-right font-mono hidden sm:block"><div className="text-[10px] uppercase tracking-widest text-stone-400">cost</div><div className="text-sm text-stone-500">{ready?money(q.cost):"—"}</div></div>}
           <div className="text-right font-mono"><div className="text-base font-semibold text-stone-900">{ready?money(sell):"—"}</div></div>
@@ -828,7 +889,7 @@ function ServiceList({quotes,best,bought,action,label,doneLabel,showCost,ready=t
             <div className="flex justify-between text-[13px] border-t border-stone-200 pt-1 mt-1 font-semibold"><span>Total</span><span className="font-mono">{money(sell)}</span></div>
           </div>
           {q.dimWeight&&<div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-2 flex items-center gap-1.5"><AlertTriangle className="w-3 h-3 shrink-0"/>Billed on <b>dimensional weight</b>{q.quotedWeight?` (${q.quotedWeight} lb)`:""}, not actual weight — the box is large for its weight.</div>}
-          {eta&&<div className="text-[11px] text-stone-400 mt-2 flex items-center gap-1"><Calendar className="w-3 h-3"/>Estimated delivery {fmtDeliv(eta)} · {days} business day{days>1?"s":""} in transit</div>}
+          {eta&&<div className="text-[11px] text-stone-400 mt-2 flex items-center gap-1"><Calendar className="w-3 h-3"/>{fxLive?"FedEx delivery":"Estimated delivery"} {fmtDeliv(eta)}{days?` · ${days} business day${days>1?"s":""} in transit`:""}</div>}
         </div>}
       </div>
     );
