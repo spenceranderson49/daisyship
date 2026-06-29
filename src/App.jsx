@@ -650,7 +650,7 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
     } else setRateSrc({rates:localQuotes(),live:false,loading:false,error:null});
     return ()=>{cancel=true;};
   },[JSON.stringify(pieces),receiver.zip,sender.zip,residential,signature,intl,settings.england]);
-  const quotes=useMemo(()=>rateSrc.rates.map(q=>{const m=fxTransit[canonSvc(q.label)];return {...q,sell:Math.round(q.cost*(1+client.markup/100)*100)/100,fxDays:m?m.days:undefined,fxDate:m?m.date:undefined};}).sort((a,b)=>a.sell-b.sell),[rateSrc,client.markup,fxTransit]);
+  const quotes=useMemo(()=>rateSrc.rates.filter(q=>{const k=canonSvc(q.label);if(residential&&k==="ground")return false;if(!residential&&k==="home")return false;return true;}).map(q=>{const m=fxTransit[canonSvc(q.label)];return {...q,sell:Math.round(q.cost*(1+client.markup/100)*100)/100,fxDays:m?m.days:undefined,fxDate:m?m.date:undefined};}).sort((a,b)=>a.sell-b.sell),[rateSrc,client.markup,fxTransit,residential]);
   const best=quotes[0]?.key;
 
   const buildRec=(q,carrier,extra)=>({id:Date.now(),date:new Date().toLocaleDateString(),tracking:(extra&&extra.tracking)||newTracking(carrier),carrier,service:q.label,recipient:{...receiver},sender:{...sender},fromZip:sender.zip,toZip:receiver.zip,weight:totalWeight,pieces:pieces.map(p=>({...p})),dims:pieces[0],insurance,cost:q.cost,sell:q.sell,billTo,thirdAcct,status:"Label created",lastScan:"Label created",eta:"—",onTime:true,reference,invoiceNo,poNo,residential,intl,bookNumber:extra&&extra.bookNumber,customs:intl?{...customs,total:customsTotal,ci:"CI-"+rnd(5)}:null});
@@ -728,7 +728,7 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
               ?<span className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 font-medium"><CheckCircle2 className="w-3.5 h-3.5"/>{verify.source==="FedEx"?"FedEx-verified address":"Address verified"}</span>
               :<span className="flex items-center gap-1.5 text-[#0086E0] bg-[#E6F4FF] border border-[#99D6FF] rounded-full px-2.5 py-1 font-medium"><AlertTriangle className="w-3.5 h-3.5"/>{verify.issues?verify.issues.join(" · "):"Address may be undeliverable"}</span>)}
           {verify&&!verify.loading&&verify.type&&<span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border ${verify.type==="Residential"?"text-[#006FBF] bg-[#E6F4FF] border-[#99D6FF]":"text-stone-700 bg-stone-100 border-stone-200"}`}>{verify.type==="Residential"?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{verify.type}{verify.source==="FedEx"?" · FedEx":""}</span>}
-          {verify&&!verify.loading&&!verify.type&&verify.unclassified&&<span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border text-stone-500 bg-stone-50 border-stone-200">{residential?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{residential?"Residential":"Commercial"} · set manually</span>}
+          {verify&&!verify.loading&&!verify.type&&verify.unclassified&&<span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border text-amber-700 bg-amber-50 border-amber-200"><AlertTriangle className="w-3.5 h-3.5"/>Type unknown · set manually</span>}
         </div>
 
         <div className="bg-stone-100 border border-stone-200 rounded-lg p-3 space-y-2">
