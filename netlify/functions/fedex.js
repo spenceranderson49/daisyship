@@ -50,7 +50,7 @@ async function transit(c, body, tk) {
       shipper: { address: { postalCode: S(body.fromZip), countryCode: body.fromCountry || "US", residential: false } },
       recipient: { address: { postalCode: S(body.toZip), countryCode: body.toCountry || "US", residential: !!body.residential } },
       pickupType: "DROPOFF_AT_FEDEX_LOCATION",
-      rateRequestType: ["ACCOUNT"],
+      rateRequestType: ["LIST", "ACCOUNT"],
       shipDateStamp: body.shipDate || today,
       requestedPackageLineItems: (Array.isArray(body.pieces) && body.pieces.length ? body.pieces : [{ weight: body.weight || 1 }]).map((p) => ({ weight: { units: "LB", value: Number(p.weight || p.wt || 1) } })),
     },
@@ -85,14 +85,16 @@ async function transit(c, body, tk) {
 // FEDEX_GROUND for businesses, and adds a residential surcharge when residential.
 async function classifyByRate(c, body, tk) {
   const a = body.address || {};
-  if (!body.fromZip || !c.account) return null;
+  if (!body.fromZip || !c.account) return { cls: null, services: [], error: "no fromZip/account" };
+  const today = new Date().toISOString().slice(0, 10);
   const payload = {
     accountNumber: { value: c.account },
     requestedShipment: {
       shipper: { address: { postalCode: S(body.fromZip), countryCode: "US" } },
       recipient: { address: { streetLines: [a.address1].filter(Boolean).map(S), city: S(a.city), stateOrProvinceCode: S(a.state), postalCode: S(a.zip), countryCode: a.country || "US" } },
-      pickupType: "DROPOFF_AT_FEDEX_LOCATION",
-      rateRequestType: ["ACCOUNT"],
+      pickupType: "USE_SCHEDULED_PICKUP",
+      rateRequestType: ["LIST", "ACCOUNT"],
+      shipDateStamp: today,
       requestedPackageLineItems: [{ weight: { units: "LB", value: 1 } }],
     },
   };
@@ -100,9 +102,10 @@ async function classifyByRate(c, body, tk) {
   try {
     r = await fetch(c.base + "/rate/v1/rates/quotes", { method: "POST", headers: { "Authorization": "Bearer " + tk, "Content-Type": "application/json", "X-locale": "en_US" }, body: JSON.stringify(payload) });
     text = await r.text(); try { d = JSON.parse(text); } catch {}
-  } catch (e) { return null; }
-  if (!r.ok) return null;
+  } catch (e) { return { cls: null, services: [], error: "rate fetch failed: " + (e && e.message) }; }
+  if (!r.ok) return { cls: null, services: [], error: "rate HTTP " + r.status + (d && d.errors ? ": " + (d.errors[0] && d.errors[0].message || JSON.stringify(d.errors)) : (text ? ": " + text.slice(0, 200) : "")) };
   const details = (d && d.output && d.output.rateReplyDetails) || [];
+  const serviceList = details.map((s) => s.serviceType);
   let resi = false, comm = false;
   for (const s of details) {
     const st = String(s.serviceType || "");
@@ -113,10 +116,9 @@ async function classifyByRate(c, body, tk) {
     const surs = sd.surCharges || sd.surcharges || [];
     for (const su of surs) { if (/residential/i.test(String(su.type || su.description || ""))) resi = true; }
   }
-  try { console.log("FEDEX classifyByRate services=" + details.map((s) => s.serviceType).join(",") + " resi=" + resi + " comm=" + comm); } catch (e) {}
-  if (resi) return "RESIDENTIAL";
-  if (comm) return "BUSINESS";
-  return null;
+  try { console.log("FEDEX classifyByRate services=" + serviceList.join(",") + " resi=" + resi + " comm=" + comm); } catch (e) {}
+  const cls = resi ? "RESIDENTIAL" : (comm ? "BUSINESS" : null);
+  return { cls, services: serviceList, error: null };
 }
 
 async function address(c, body, tk) {
@@ -136,16 +138,20 @@ async function address(c, body, tk) {
   try { console.log("FEDEX address validation classification=" + (res && res.classification) + " attrs=" + JSON.stringify(attrs).slice(0, 300)); } catch (e) {}
   let cls = ((res && (res.classification || attrs.Classification)) || "UNKNOWN").toUpperCase();
   let source = "validation";
+  let rateDebug = null;
   // Address Validation classification is unreliable — when it's not definitive, ask the Rate API.
   if (cls !== "RESIDENTIAL" && cls !== "BUSINESS") {
     const byRate = await classifyByRate(c, body, tk);
-    if (byRate) { cls = byRate; source = "rate"; }
+    rateDebug = { services: byRate.services, error: byRate.error };
+    if (byRate.cls) { cls = byRate.cls; source = "rate"; }
   }
   return {
     ok: true,
-    classification: cls,                 // RESIDENTIAL | BUSINESS | MIXED | UNKNOWN
+    classification: cls,                 // RESIDENTIAL | BUSINESS | UNKNOWN
     residential: cls === "RESIDENTIAL",
     source,
+    validationClassification: (res && res.classification) || null,
+    rateDebug,
     deliverable: attrs.Resolved === "true" || attrs.DPV === "true" || !res || res.customerMessages == null,
     resolved: res ? { streetLines: res.streetLinesToken || res.streetLines || null, city: res.city, state: res.stateOrProvinceCode, zip: res.postalCode, country: res.countryCode } : null,
     attributes: attrs,
