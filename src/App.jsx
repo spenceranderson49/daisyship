@@ -144,8 +144,8 @@ async function fedexTransit(s){
   for(const sv of res.services){ const k=canonSvc(sv.serviceType); if(!map[k]||(sv.transitDays!=null)) map[k]={days:sv.transitDays,date:sv.deliveryDate,day:sv.deliveryDay,name:sv.serviceName}; }
   return map;
 }
-async function fedexValidateAddress(addr){
-  return await fedexCall({action:"address",address:{address1:addr.address1,address2:addr.address2,city:addr.city,state:addr.state,zip:addr.zip,country:addr.country||"US"}});
+async function fedexValidateAddress(addr,fromZip){
+  return await fedexCall({action:"address",fromZip:fromZip||"",address:{address1:addr.address1,address2:addr.address2,city:addr.city,state:addr.state,zip:addr.zip,country:addr.country||"US"}});
 }
 
 /* ════════ SEED ════════ */
@@ -460,26 +460,34 @@ function UsersAdmin({users,setUsers,clients,currentUser}){
 }
 
 /* ════════ APP ════════ */
+const LS_OK=(()=>{try{const k="__sc_t";window.localStorage.setItem(k,"1");window.localStorage.removeItem(k);return true;}catch(e){return false;}})();
+const lsGet=(k,fb)=>{ if(!LS_OK)return fb; try{const v=window.localStorage.getItem("sc_"+k);return v==null?fb:JSON.parse(v);}catch(e){return fb;} };
+const lsSet=(k,v)=>{ if(!LS_OK)return; try{window.localStorage.setItem("sc_"+k,JSON.stringify(v));}catch(e){} };
+function usePersist(key,initial){
+  const [val,setVal]=useState(()=>lsGet(key,initial));
+  useEffect(()=>{lsSet(key,val);},[key,val]);
+  return [val,setVal];
+}
 export default function App(){
   const [tab,setTab]=useState("ship");
-  const [users,setUsers]=useState(SEED_USERS);
+  const [users,setUsers]=usePersist("users",SEED_USERS);
   const [currentUser,setCurrentUser]=useState(null);
-  const [clients,setClients]=useState(SEED_CLIENTS);
+  const [clients,setClients]=usePersist("clients",SEED_CLIENTS);
   const [clientId,setClientId]=useState("c1");
-  const [accounts,setAccounts]=useState(SEED_ACCOUNTS);
-  const [orders,setOrders]=useState(SEED_ORDERS);
-  const [shipments,setShipments]=useState(SEED_SHIPMENTS);
-  const [pickups,setPickups]=useState([]);
-  const [returns,setReturns]=useState(SEED_RETURNS);
-  const [manifests,setManifests]=useState([]);
-  const [rules,setRules]=useState(SEED_RULES);
-  const [drafts,setDrafts]=useState([]);
-  const [emails,setEmails]=useState(SEED_EMAILS);
-  const [ledger,setLedger]=useState(SEED_LEDGER);
-  const [invoices,setInvoices]=useState(SEED_INVOICES);
+  const [accounts,setAccounts]=usePersist("accounts",SEED_ACCOUNTS);
+  const [orders,setOrders]=usePersist("orders",SEED_ORDERS);
+  const [shipments,setShipments]=usePersist("shipments",SEED_SHIPMENTS);
+  const [pickups,setPickups]=usePersist("pickups",[]);
+  const [returns,setReturns]=usePersist("returns",SEED_RETURNS);
+  const [manifests,setManifests]=usePersist("manifests",[]);
+  const [rules,setRules]=usePersist("rules",SEED_RULES);
+  const [drafts,setDrafts]=usePersist("drafts",[]);
+  const [emails,setEmails]=usePersist("emails",SEED_EMAILS);
+  const [ledger,setLedger]=usePersist("ledger",SEED_LEDGER);
+  const [invoices,setInvoices]=usePersist("invoices",SEED_INVOICES);
   const [qq,setQQ]=useState(false);
   const [prefill,setPrefill]=useState(null);
-  const [settings,setSettings]=useState({company:"Sparkle in Pink",sender:{name:"Matt Goeckeritz",company:"Riley Blake Designs",zip:"84003",state:"UT",city:"Lehi",address1:"4060 W 2100 N",phone:"801-816-0540",email:"spencertesttes@test.com"},defaultBillTo:"sender",thirdPartyAccts:[{id:"tp1",carrier:"FedEx",account:"20601652",label:"England FedEx"}],shopify:true,notify:NOTIFY_DEFAULTS,boxes:SEED_BOXES,checkout:CHECKOUT_DEFAULTS,platforms:PLATFORM_DEFAULTS,plan:"starter",england:{enabled:false,base:"https://englandship.rocksolidinternet.com",apiKey:"",customerId:"",account:"20601652"},addresses:[{id:"ab1",name:"Riley Blake Designs",city:"Lehi",state:"UT",zip:"84003",address1:"4060 W 2100 N"}]});
+  const [settings,setSettings]=usePersist("settings",{company:"Sparkle in Pink",sender:{name:"Matt Goeckeritz",company:"Riley Blake Designs",zip:"84003",state:"UT",city:"Lehi",address1:"4060 W 2100 N",phone:"801-816-0540",email:"spencertesttes@test.com"},defaultBillTo:"sender",thirdPartyAccts:[{id:"tp1",carrier:"FedEx",account:"20601652",label:"England FedEx"}],shopify:true,notify:NOTIFY_DEFAULTS,boxes:SEED_BOXES,checkout:CHECKOUT_DEFAULTS,platforms:PLATFORM_DEFAULTS,plan:"starter",england:{enabled:false,base:"https://englandship.rocksolidinternet.com",apiKey:"",customerId:"",account:"20601652"},addresses:[{id:"ab1",name:"Riley Blake Designs",city:"Lehi",state:"UT",zip:"84003",address1:"4060 W 2100 N"}]});
 
   const client=clients.find(c=>c.id===clientId)||clients[0];
   const logEmail=(e)=>setEmails(p=>[{id:"e"+Date.now()+Math.random(),date:new Date().toLocaleString(),status:"sent",...e},...p]);
@@ -496,7 +504,7 @@ export default function App(){
   const isAdmin=currentUser&&currentUser.role==="admin";
   const ALL_TABS=[["ship","Ship",Package],["orders","Orders",ShoppingBag],["batch","Batch",Layers],["scan","Scan",ScanLine],["shipments","Shipments",Truck],["drafts","Drafts",FileText],["returns","Returns",Undo2],["pickups","Pickups",Calendar],["invoices","Invoices",Receipt],["ledger","Ledger",Wallet],["addresses","Address Book",BookUser],["dashboard","Dashboard",BarChart3],["admin","Admin",ShieldCheck],["settings","Settings",Cog]];
   const CUSTOMER_TABS=new Set(["ship","orders","shipments","drafts","returns","dashboard"]);
-  const TABS=isAdmin?ALL_TABS:ALL_TABS.filter(t=>CUSTOMER_TABS.has(t[0]));
+  const TABS=isAdmin?ALL_TABS:ALL_TABS.filter(t=>t[0]!=="admin");
   const unfulfilled=orders.filter(o=>o.status==="unfulfilled").length;
 
   if(!currentUser) return <Login users={users} onLogin={(u)=>{setCurrentUser(u);setTab("ship");if(u.role==="customer"&&u.clientId)setClientId(u.clientId);}}/>;
@@ -593,7 +601,7 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
     let cancel=false;
     setVerify({loading:true});
     const t=setTimeout(async()=>{
-      const res=await fedexValidateAddress(receiver);
+      const res=await fedexValidateAddress(receiver, sender.zip||client.origin);
       if(cancel)return;
       if(res&&res.ok&&(res.classification==="RESIDENTIAL"||res.classification==="BUSINESS")){
         const type=res.classification==="BUSINESS"?"Commercial":"Residential";
