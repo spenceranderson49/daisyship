@@ -1,5 +1,8 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { Package, Truck, Users, Plug, Plus, Check, X, ChevronRight, ChevronDown, Wifi, WifiOff, Loader2, Trash2, ShoppingBag, ArrowLeftRight, Search, Calendar, Settings as Cog, Calculator, ExternalLink, Edit3, RotateCcw, MapPin, Printer, Building2, CreditCard, BarChart3, Layers, FileText, Undo2, Zap, Download, Boxes, CheckCircle2, AlertTriangle, TrendingUp, ShieldCheck, Mail, Cloud, Receipt, Wallet, Upload, Star, Send, Home, BookUser, DollarSign, ScanLine } from "lucide-react";
+const FW_BLUE="#0096F0";
+const FW_DARK="#111418";
+const FW_LOGO="/freightwire.png";
 
 
 /* ════════ RATE ENGINE (demo) ════════ */
@@ -106,7 +109,14 @@ async function pollLabel(england,orderId,onUpdate){
 }
 
 /* ════════ SEED ════════ */
-const SEED_CLIENTS=[{id:"c1",name:"Sparkle in Pink",markup:18,origin:"84003"},{id:"c2",name:"House accounts",markup:12,origin:"84057"}];
+const SEED_CLIENTS=[
+  {id:"c1",name:"Sparkle in Pink",markup:18,origin:"84003",contact:"Spencer Anderson",email:"ops@sparkleinpink.com",phone:"801-555-0100",status:"active",since:"2025-09",plan:"Volume"},
+  {id:"c2",name:"House accounts",markup:12,origin:"84057",contact:"—",email:"",phone:"",status:"active",since:"2025-06",plan:"Standard"},
+];
+const SEED_USERS=[
+  {id:"u1",name:"Spencer Anderson",email:"spencer@shippingcloud.net",role:"admin",clientId:null,status:"active",password:"admin",lastLogin:"Today"},
+  {id:"u2",name:"Sparkle in Pink",email:"ops@sparkleinpink.com",role:"customer",clientId:"c1",status:"active",password:"sip123",lastLogin:"2d ago"},
+];
 const SEED_ACCOUNTS=[{id:"a1",label:"England Logistics",provider:"england",account:"20601652",status:"connected",mode:"demo"}];
 const SEED_ORDERS=[
   {id:1042,name:"#1042",customer:"Jenna Reyes",company:"",zip:"90210",city:"Beverly Hills",state:"CA",address1:"412 Canon Dr",phone:"310-555-0142",email:"jenna@example.com",total:"48.00",weight:2,items:"2× Ruffle Leggings",sku:"SIP-LEG-RUF",product:"Ruffle Leggings",source:"Shopify",shippingService:"Standard",status:"unfulfilled",date:"6/24"},
@@ -240,9 +250,180 @@ const HTS_SUGGEST=[
   {code:"6110.20.2079",desc:"Sweaters/pullovers, cotton"},
 ];
 
+/* ════════ AUTH ════════ */
+function Login({users,onLogin}){
+  const [mode,setMode]=useState("signin");
+  const [email,setEmail]=useState("");
+  const [pw,setPw]=useState("");
+  const [name,setName]=useState("");
+  const [company,setCompany]=useState("");
+  const [err,setErr]=useState("");
+  const [note,setNote]=useState("");
+  const signin=()=>{
+    const u=users.find(x=>x.email.toLowerCase()===email.trim().toLowerCase()&&x.password===pw);
+    if(!u){setErr("Incorrect email or password.");return;}
+    if(u.status!=="active"){setErr("This account is inactive. Contact your administrator.");return;}
+    onLogin(u);
+  };
+  const signup=()=>{
+    if(!name||!email||!pw){setErr("Fill in your name, email, and a password.");return;}
+    setNote("Account request submitted. In production this would await admin approval; for now you can sign in with the demo accounts below.");
+    setMode("signin");
+  };
+  return (
+    <div className="min-h-screen bg-stone-100 flex items-center justify-center p-4" style={{fontFamily:"ui-sans-serif,system-ui,sans-serif"}}>
+      <div className="w-full max-w-sm">
+        <div className="flex flex-col items-center gap-2 mb-6">
+          <div className="flex items-center gap-2">
+            <span className="w-10 h-10 rounded-lg flex items-center justify-center" style={{background:FW_BLUE+"14",border:"1px solid "+FW_BLUE+"33"}}><Cloud className="w-6 h-6" style={{color:FW_BLUE}}/></span>
+            <span className="font-extrabold tracking-tight text-2xl" style={{color:FW_DARK}}>Shipping<span style={{color:FW_BLUE}}>Cloud</span></span>
+          </div>
+          <div className="flex items-center gap-1.5 text-stone-400 text-xs">by<img src={FW_LOGO} alt="Freightwire" className="h-5 w-auto object-contain"/></div>
+        </div>
+        <div className="bg-white border border-stone-200 rounded-xl shadow-sm p-6 space-y-3">
+          <div className="flex bg-stone-100 rounded-lg p-0.5 text-sm mb-1">
+            {[["signin","Sign in"],["signup","Create account"]].map(([v,l])=><button key={v} onClick={()=>{setMode(v);setErr("");setNote("");}} className={`flex-1 px-3 py-1.5 rounded-md ${mode===v?"bg-white shadow-sm text-stone-900 font-medium":"text-stone-500"}`}>{l}</button>)}
+          </div>
+          {mode==="signup"&&<><Field label="Your name"><Input value={name} onChange={e=>setName(e.target.value)}/></Field><Field label="Company"><Input value={company} onChange={e=>setCompany(e.target.value)}/></Field></>}
+          <Field label="Email"><Input value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&mode==="signin")signin();}} placeholder="you@company.com"/></Field>
+          <Field label="Password"><Input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")mode==="signin"?signin():signup();}} placeholder="••••••••"/></Field>
+          {err&&<div className="text-sm text-rose-600 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4"/>{err}</div>}
+          {note&&<div className="text-sm text-sky-700 bg-sky-50 border border-sky-200 rounded px-3 py-2">{note}</div>}
+          <button onClick={mode==="signin"?signin:signup} className="w-full bg-stone-900 text-white rounded-lg px-4 py-2.5 font-medium hover:bg-stone-800">{mode==="signin"?"Sign in":"Request account"}</button>
+        </div>
+        <div className="mt-4 bg-white/60 border border-stone-200 rounded-lg p-3 text-[12px] text-stone-500 space-y-1">
+          <div className="font-medium text-stone-600">Demo logins</div>
+          <button onClick={()=>{setEmail("spencer@shippingcloud.net");setPw("admin");setMode("signin");}} className="block hover:text-sky-600">Admin · spencer@shippingcloud.net / admin</button>
+          <button onClick={()=>{setEmail("ops@sparkleinpink.com");setPw("sip123");setMode("signin");}} className="block hover:text-sky-600">Customer · ops@sparkleinpink.com / sip123</button>
+        </div>
+        <p className="text-[11px] text-stone-400 text-center mt-3">Prototype sign-in. For live customer logins, connect a real auth provider + database.</p>
+      </div>
+    </div>
+  );
+}
+
+/* ════════ ADMIN PORTAL ════════ */
+function AdminPortal({clients,setClients,users,setUsers,shipments,orders,ledger,currentUser}){
+  const [sec,setSec]=useState("overview");
+  const [openC,setOpenC]=useState(null);
+  const statsFor=(cName)=>{const sh=shipments.filter(s=>s.client===cName);const spend=sh.reduce((a,s)=>a+(s.sell||0),0);return {count:sh.length,spend};};
+  const totalRev=shipments.reduce((a,s)=>a+(s.sell||0),0);
+  const SOURCE_TONE={active:"green",inactive:"stone",pending:"amber"};
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-sky-600"/><h1 className="text-lg font-semibold text-stone-800">Admin portal</h1></div>
+      <div className="flex bg-stone-100 rounded-lg p-0.5 text-sm w-fit">
+        {[["overview","Overview"],["customers","Customers"],["users","Users & logins"]].map(([v,l])=><button key={v} onClick={()=>setSec(v)} className={`px-3 py-1.5 rounded-md ${sec===v?"bg-white shadow-sm text-stone-900 font-medium":"text-stone-500"}`}>{l}</button>)}
+      </div>
+
+      {sec==="overview"&&<div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Stat2 label="Customers" value={clients.length}/>
+        <Stat2 label="User logins" value={users.length}/>
+        <Stat2 label="Shipments" value={shipments.length}/>
+        <Stat2 label="Revenue (billed)" value={money(totalRev)}/>
+      </div>}
+      {sec==="overview"&&<div className="border border-stone-200 rounded-lg bg-white p-4">
+        <div className="text-sm font-semibold text-stone-700 mb-2">Customers at a glance</div>
+        <div className="divide-y divide-stone-100">{clients.map(c=>{const st=statsFor(c.name);return (
+          <div key={c.id} className="flex items-center gap-3 py-2.5 text-sm">
+            <div className="flex-1 min-w-0"><div className="font-medium text-stone-800 truncate">{c.name}</div><div className="text-[11px] text-stone-400">markup {c.markup}% · origin {c.origin}</div></div>
+            <div className="text-xs text-stone-500 w-24 text-right">{st.count} shipments</div>
+            <div className="font-mono text-sm w-20 text-right">{money(st.spend)}</div>
+            <Badge tone={SOURCE_TONE[c.status]||"stone"}>{c.status||"active"}</Badge>
+          </div>
+        );})}</div>
+      </div>}
+
+      {sec==="customers"&&<CustomersAdmin clients={clients} setClients={setClients} statsFor={statsFor} openC={openC} setOpenC={setOpenC}/>}
+      {sec==="users"&&<UsersAdmin users={users} setUsers={setUsers} clients={clients} currentUser={currentUser}/>}
+    </div>
+  );
+}
+function CustomersAdmin({clients,setClients,statsFor,openC,setOpenC}){
+  const [adding,setAdding]=useState(false);
+  const [f,setF]=useState({name:"",contact:"",email:"",phone:"",origin:"",markup:15});
+  const create=()=>{if(!f.name)return;setClients(p=>[...p,{id:"c"+Date.now(),name:f.name,contact:f.contact,email:f.email,phone:f.phone,origin:f.origin,markup:+f.markup||0,status:"active",since:new Date().toISOString().slice(0,7),plan:"Standard"}]);setF({name:"",contact:"",email:"",phone:"",origin:"",markup:15});setAdding(false);};
+  const setMarkup=(id,v)=>setClients(cs=>cs.map(c=>c.id===id?{...c,markup:+v||0}:c));
+  const setStatus=(id,v)=>setClients(cs=>cs.map(c=>c.id===id?{...c,status:v}:c));
+  return (<div className="space-y-3">
+    <div className="flex justify-between items-center"><div className="text-sm text-stone-500">Your shipping customers — markup, origin, and activity.</div><button onClick={()=>setAdding(a=>!a)} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded px-3 py-2 font-medium hover:bg-stone-800"><Plus className="w-4 h-4"/>New customer</button></div>
+    {adding&&<div className="border border-stone-200 rounded-lg bg-white p-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
+      <Field label="Company"><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field>
+      <Field label="Contact"><Input value={f.contact} onChange={e=>setF({...f,contact:e.target.value})}/></Field>
+      <Field label="Email"><Input value={f.email} onChange={e=>setF({...f,email:e.target.value})}/></Field>
+      <Field label="Phone"><Input value={f.phone} onChange={e=>setF({...f,phone:e.target.value})}/></Field>
+      <Field label="Origin ZIP"><Input value={f.origin} onChange={e=>setF({...f,origin:e.target.value})}/></Field>
+      <Field label="Markup %"><Input type="number" value={f.markup} onChange={e=>setF({...f,markup:e.target.value})}/></Field>
+      <div className="col-span-2 sm:col-span-3"><button onClick={create} className="text-sm bg-stone-900 text-white rounded px-4 py-2 font-medium">Create customer</button></div>
+    </div>}
+    <div className="border border-stone-200 rounded-lg bg-white overflow-hidden divide-y divide-stone-100">
+      <div className="flex items-center gap-3 px-4 py-2 bg-stone-50 text-[11px] uppercase tracking-widest text-stone-400"><div className="flex-1">Customer</div><div className="w-24 text-right">Shipments</div><div className="w-24 text-right">Billed</div><div className="w-24 text-right">Markup</div><div className="w-20 text-right">Status</div></div>
+      {clients.map(c=>{const st=statsFor(c.name);const open=openC===c.id;return (
+        <div key={c.id}>
+          <div className="flex items-center gap-3 px-4 py-3 hover:bg-stone-50 cursor-pointer" onClick={()=>setOpenC(open?null:c.id)}>
+            <ChevronRight className={`w-4 h-4 text-stone-400 transition-transform ${open?"rotate-90":""}`}/>
+            <div className="flex-1 min-w-0"><div className="font-medium text-sm truncate">{c.name}</div><div className="text-[11px] text-stone-400 truncate">{c.contact||"—"}{c.email?` · ${c.email}`:""}</div></div>
+            <div className="w-24 text-right text-sm text-stone-600">{st.count}</div>
+            <div className="w-24 text-right font-mono text-sm">{money(st.spend)}</div>
+            <div className="w-24 text-right font-mono text-sm">{c.markup}%</div>
+            <div className="w-20 text-right"><Badge tone={c.status==="inactive"?"stone":"green"}>{c.status||"active"}</Badge></div>
+          </div>
+          {open&&<div className="px-4 sm:px-11 pb-4 pt-1 bg-stone-50/60 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Origin</div><div className="text-sm">{c.origin||"—"}</div></div>
+            <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Phone</div><div className="text-sm">{c.phone||"—"}</div></div>
+            <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Customer since</div><div className="text-sm">{c.since||"—"}</div></div>
+            <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Plan</div><div className="text-sm">{c.plan||"Standard"}</div></div>
+            <Field label="Markup %"><Input type="number" value={c.markup} onChange={e=>setMarkup(c.id,e.target.value)}/></Field>
+            <Field label="Status"><Select value={c.status||"active"} onChange={e=>setStatus(c.id,e.target.value)}><option value="active">active</option><option value="inactive">inactive</option></Select></Field>
+          </div>}
+        </div>
+      );})}
+    </div>
+  </div>);
+}
+function UsersAdmin({users,setUsers,clients,currentUser}){
+  const [f,setF]=useState({name:"",email:"",role:"customer",clientId:clients[0]?clients[0].id:"",password:""});
+  const [added,setAdded]=useState(false);
+  const create=()=>{if(!f.name||!f.email||!f.password)return;setUsers(p=>[...p,{id:"u"+Date.now(),name:f.name,email:f.email,role:f.role,clientId:f.role==="customer"?f.clientId:null,status:"active",password:f.password,lastLogin:"—"}]);setF({name:"",email:"",role:"customer",clientId:clients[0]?clients[0].id:"",password:""});setAdded(true);setTimeout(()=>setAdded(false),1600);};
+  const toggle=(id)=>setUsers(us=>us.map(u=>u.id===id?{...u,status:u.status==="active"?"inactive":"active"}:u));
+  const del=(id)=>setUsers(us=>us.filter(u=>u.id!==id));
+  return (<div className="space-y-3">
+    <div className="text-sm text-stone-500">Create and manage logins. Admins see everything; customer logins are scoped to one customer account.</div>
+    <div className="border border-stone-200 rounded-lg bg-white p-4 space-y-3">
+      <div className="text-sm font-semibold text-stone-700">New login</div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <Field label="Name"><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field>
+        <Field label="Email"><Input value={f.email} onChange={e=>setF({...f,email:e.target.value})}/></Field>
+        <Field label="Temp password"><Input value={f.password} onChange={e=>setF({...f,password:e.target.value})}/></Field>
+        <Field label="Role"><Select value={f.role} onChange={e=>setF({...f,role:e.target.value})}><option value="customer">Customer</option><option value="admin">Admin</option></Select></Field>
+        {f.role==="customer"&&<Field label="Customer account"><Select value={f.clientId} onChange={e=>setF({...f,clientId:e.target.value})}>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</Select></Field>}
+      </div>
+      <button onClick={create} className={`text-sm rounded px-4 py-2 font-medium flex items-center gap-1.5 ${added?"bg-emerald-600 text-white":"bg-stone-900 text-white hover:bg-stone-800"}`}>{added?<><Check className="w-4 h-4"/>Created</>:<><Plus className="w-4 h-4"/>Create login</>}</button>
+    </div>
+    <div className="border border-stone-200 rounded-lg bg-white overflow-hidden divide-y divide-stone-100">
+      <div className="flex items-center gap-3 px-4 py-2 bg-stone-50 text-[11px] uppercase tracking-widest text-stone-400"><div className="flex-1">User</div><div className="w-24">Role</div><div className="w-32 hidden sm:block">Customer</div><div className="w-20">Last login</div><div className="w-24 text-right">Actions</div></div>
+      {users.map(u=>(
+        <div key={u.id} className="flex items-center gap-3 px-4 py-3 text-sm">
+          <div className="flex-1 min-w-0"><div className="font-medium truncate">{u.name}</div><div className="text-[11px] text-stone-400 truncate">{u.email}</div></div>
+          <div className="w-24"><Badge tone={u.role==="admin"?"blue":"stone"}>{u.role}</Badge></div>
+          <div className="w-32 hidden sm:block text-xs text-stone-500 truncate">{u.role==="admin"?"— all —":(clients.find(c=>c.id===u.clientId)||{}).name||"—"}</div>
+          <div className="w-20 text-xs text-stone-400">{u.lastLogin||"—"}</div>
+          <div className="w-24 flex items-center justify-end gap-1.5">
+            <button onClick={()=>toggle(u.id)} title={u.status==="active"?"Deactivate":"Activate"} className={`text-[11px] rounded px-2 py-1 ${u.status==="active"?"bg-emerald-50 text-emerald-700":"bg-stone-100 text-stone-500"}`}>{u.status==="active"?"active":"off"}</button>
+            {u.id!==currentUser.id&&<button onClick={()=>del(u.id)} className="text-stone-300 hover:text-rose-500"><Trash2 className="w-4 h-4"/></button>}
+          </div>
+        </div>
+      ))}
+    </div>
+    <p className="text-[11px] text-stone-400">Passwords here are stored in app state for the prototype. Before exposing customer logins publicly, move authentication to a real provider so passwords are hashed and sessions are secure.</p>
+  </div>);
+}
+
 /* ════════ APP ════════ */
 export default function App(){
   const [tab,setTab]=useState("ship");
+  const [users,setUsers]=useState(SEED_USERS);
+  const [currentUser,setCurrentUser]=useState(null);
   const [clients,setClients]=useState(SEED_CLIENTS);
   const [clientId,setClientId]=useState("c1");
   const [accounts,setAccounts]=useState(SEED_ACCOUNTS);
@@ -272,16 +453,27 @@ export default function App(){
     addLedger({type:"Shipping charge",ref:rec.reference||rec.tracking,amount:-(rec.sell||0)});
   };
 
-  const TABS=[["ship","Ship",Package],["orders","Orders",ShoppingBag],["batch","Batch",Layers],["scan","Scan",ScanLine],["shipments","Shipments",Truck],["drafts","Drafts",FileText],["returns","Returns",Undo2],["pickups","Pickups",Calendar],["invoices","Invoices",Receipt],["ledger","Ledger",Wallet],["addresses","Address Book",BookUser],["dashboard","Dashboard",BarChart3],["settings","Settings",Cog]];
+  const isAdmin=currentUser&&currentUser.role==="admin";
+  const ALL_TABS=[["ship","Ship",Package],["orders","Orders",ShoppingBag],["batch","Batch",Layers],["scan","Scan",ScanLine],["shipments","Shipments",Truck],["drafts","Drafts",FileText],["returns","Returns",Undo2],["pickups","Pickups",Calendar],["invoices","Invoices",Receipt],["ledger","Ledger",Wallet],["addresses","Address Book",BookUser],["dashboard","Dashboard",BarChart3],["admin","Admin",ShieldCheck],["settings","Settings",Cog]];
+  const CUSTOMER_TABS=new Set(["ship","orders","shipments","drafts","returns","dashboard"]);
+  const TABS=isAdmin?ALL_TABS:ALL_TABS.filter(t=>CUSTOMER_TABS.has(t[0]));
   const unfulfilled=orders.filter(o=>o.status==="unfulfilled").length;
+
+  if(!currentUser) return <Login users={users} onLogin={(u)=>{setCurrentUser(u);setTab("ship");if(u.role==="customer"&&u.clientId)setClientId(u.clientId);}}/>;
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-800" style={{fontFamily:"ui-sans-serif,system-ui,sans-serif"}}>
       <header className="border-b border-stone-200 sticky top-0 z-20 bg-white/90 backdrop-blur">
         <div className="px-4 h-14 flex items-center gap-3">
-          <span className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center"><Cloud className="w-5 h-5 text-blue-600"/></span>
-          <span className="font-extrabold tracking-tight text-[17px]">Shipping<span className="text-blue-600">Cloud</span></span>
+          <span className="w-9 h-9 rounded-lg flex items-center justify-center" style={{background:FW_BLUE+"14",border:"1px solid "+FW_BLUE+"33"}}><Cloud className="w-5 h-5" style={{color:FW_BLUE}}/></span>
+          <span className="font-extrabold tracking-tight text-[17px]" style={{color:FW_DARK}}>Shipping<span style={{color:FW_BLUE}}>Cloud</span></span>
+          <span className="hidden sm:flex items-center gap-1.5 text-stone-400 text-xs"><span className="w-px h-5 bg-stone-200"/>by<img src={FW_LOGO} alt="Freightwire" className="h-4 w-auto object-contain"/></span>
           <div className="flex-1"/>
+          <div className="flex items-center gap-3">
+            <div className="text-right leading-tight hidden sm:block"><div className="text-sm font-medium text-stone-800">{currentUser.name}</div><div className="text-[11px] text-stone-400">{currentUser.role==="admin"?"Administrator":(clients.find(c=>c.id===currentUser.clientId)||{}).name||"Customer"}</div></div>
+            <span className="w-8 h-8 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center text-sm font-semibold">{(currentUser.name||"?").slice(0,1).toUpperCase()}</span>
+            <button onClick={()=>{setCurrentUser(null);setTab("ship");}} className="text-sm text-stone-500 hover:text-stone-800 border border-stone-200 rounded px-2.5 py-1.5">Sign out</button>
+          </div>
         </div>
       </header>
       {qq&&<QuickQuote onClose={()=>setQQ(false)} client={client} england={settings.england}/>}
@@ -289,8 +481,8 @@ export default function App(){
         <aside className="w-52 shrink-0 border-r border-stone-200 bg-white min-h-screen">
           <nav className="p-2 space-y-0.5 sticky top-14">
             {TABS.map(([id,l,Icon])=>(
-              <button key={id} onClick={()=>setTab(id)} className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm ${tab===id?"bg-blue-50 text-blue-700 font-medium":"text-stone-600 hover:bg-stone-100"}`}>
-                <Icon className="w-4 h-4 shrink-0"/><span className="flex-1 text-left">{l}</span>{id==="orders"&&unfulfilled>0&&<span className="text-[10px] bg-blue-600 text-white rounded-full px-1.5 py-0.5 leading-none">{unfulfilled}</span>}
+              <button key={id} onClick={()=>setTab(id)} className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm ${tab===id?"bg-sky-50 text-sky-700 font-medium":"text-stone-600 hover:bg-stone-100"}`}>
+                <Icon className="w-4 h-4 shrink-0"/><span className="flex-1 text-left">{l}</span>{id==="orders"&&unfulfilled>0&&<span className="text-[10px] bg-sky-600 text-white rounded-full px-1.5 py-0.5 leading-none">{unfulfilled}</span>}
               </button>
             ))}
           </nav>
@@ -308,6 +500,7 @@ export default function App(){
           {tab==="invoices"&&<Invoices invoices={invoices} setInvoices={setInvoices} shipments={shipments} client={client}/>}
           {tab==="ledger"&&<Ledger ledger={ledger} addLedger={addLedger}/>}
           {tab==="addresses"&&<AddressBook settings={settings} setSettings={setSettings}/>}
+          {tab==="admin"&&isAdmin&&<AdminPortal clients={clients} setClients={setClients} users={users} setUsers={setUsers} shipments={shipments} orders={orders} ledger={ledger} currentUser={currentUser}/>}
           {tab==="settings"&&<Settings settings={settings} setSettings={setSettings} accounts={accounts} setAccounts={setAccounts} clients={clients} setClients={setClients} rules={rules} setRules={setRules} emails={emails} shipments={shipments} setShipments={setShipments} manifests={manifests} setManifests={setManifests} client={client}/>}
         </main>
       </div>
@@ -425,10 +618,10 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
       <aside className="lg:w-64 shrink-0 space-y-2">
         <div className="flex items-center justify-between gap-2 mb-1">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-stone-500"><ShoppingBag className="w-4 h-4"/>Orders</div>
-          <select value={orderSort} onChange={e=>setOrderSort(e.target.value)} className="bg-white border border-stone-200 rounded px-1.5 py-1 text-[11px] outline-none focus:border-blue-500"><option value="date">Newest</option><option value="total">Total</option><option value="customer">Name</option><option value="state">State</option><option value="weight">Weight</option></select>
+          <select value={orderSort} onChange={e=>setOrderSort(e.target.value)} className="bg-white border border-stone-200 rounded px-1.5 py-1 text-[11px] outline-none focus:border-sky-500"><option value="date">Newest</option><option value="total">Total</option><option value="customer">Name</option><option value="state">State</option><option value="weight">Weight</option></select>
         </div>
         {ordersToShow.length===0?<div className="border border-dashed border-stone-300 rounded-lg p-4 text-center text-xs text-stone-400">No unfulfilled orders.</div>:ordersToShow.map(o=>(
-          <button key={o.id} onClick={()=>applyOrder(o)} className={`w-full text-left border rounded-lg p-3 transition-colors ${selectedOrder===o.id?"border-blue-400 bg-blue-50":"border-stone-200 bg-white hover:border-stone-300"}`}>
+          <button key={o.id} onClick={()=>applyOrder(o)} className={`w-full text-left border rounded-lg p-3 transition-colors ${selectedOrder===o.id?"border-sky-400 bg-sky-50":"border-stone-200 bg-white hover:border-stone-300"}`}>
             <div className="flex items-center justify-between"><span className="font-semibold text-sm text-stone-800 flex items-center gap-1.5">{o.name}{o.source&&<span className="text-[9px] uppercase tracking-wide text-stone-400 border border-stone-200 rounded px-1">{o.source}</span>}</span><span className="font-mono text-xs text-stone-400">${o.total}</span></div>
             <div className="text-xs text-stone-600 mt-0.5">{o.customer}</div>
             <div className="text-[11px] text-stone-400 mt-0.5">{o.city}, {o.state} {o.zip}</div>
@@ -439,7 +632,7 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
       </aside>
       <div className="flex-1 min-w-0 space-y-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-base font-semibold text-stone-800 flex items-center gap-2"><Package className="w-4 h-4 text-blue-600"/>Create shipment</h1>
+          <h1 className="text-base font-semibold text-stone-800 flex items-center gap-2"><Package className="w-4 h-4 text-sky-600"/>Create shipment</h1>
           <div className="flex items-center gap-2">
             {onQuickQuote&&<button onClick={onQuickQuote} className="flex items-center gap-1.5 text-sm bg-stone-100 text-stone-700 border border-stone-200 rounded px-3 py-1.5 font-medium hover:bg-stone-200"><Calculator className="w-4 h-4"/>Quick quote</button>}
             <button onClick={newShipment} className="flex items-center gap-1.5 text-sm bg-stone-200 text-stone-700 rounded px-3 py-1.5 font-medium hover:bg-stone-300"><Plus className="w-4 h-4"/>New shipment</button>
@@ -447,22 +640,22 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
         </div>
         <div className="flex flex-wrap items-end gap-3 border border-stone-200 rounded-lg bg-white p-3">
           <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Ship date</div><div className="text-sm font-mono text-stone-800 py-1">{new Date().toLocaleDateString()}</div></div>
-          <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">Invoice #</div><input value={invoiceNo} onChange={e=>setInvoiceNo(e.target.value)} placeholder="INV-…" className="w-full bg-transparent text-sm outline-none border-b border-stone-200 focus:border-blue-500 py-1 placeholder-stone-300"/></div>
-          <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">PO #</div><input value={poNo} onChange={e=>setPoNo(e.target.value)} placeholder="PO-…" className="w-full bg-transparent text-sm outline-none border-b border-stone-200 focus:border-blue-500 py-1 placeholder-stone-300"/></div>
-          <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">Reference #</div><input value={reference} onChange={e=>setReference(e.target.value)} placeholder="order / ref" className="w-full bg-transparent text-sm outline-none border-b border-stone-200 focus:border-blue-500 py-1 placeholder-stone-300"/></div>
+          <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">Invoice #</div><input value={invoiceNo} onChange={e=>setInvoiceNo(e.target.value)} placeholder="INV-…" className="w-full bg-transparent text-sm outline-none border-b border-stone-200 focus:border-sky-500 py-1 placeholder-stone-300"/></div>
+          <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">PO #</div><input value={poNo} onChange={e=>setPoNo(e.target.value)} placeholder="PO-…" className="w-full bg-transparent text-sm outline-none border-b border-stone-200 focus:border-sky-500 py-1 placeholder-stone-300"/></div>
+          <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">Reference #</div><input value={reference} onChange={e=>setReference(e.target.value)} placeholder="order / ref" className="w-full bg-transparent text-sm outline-none border-b border-stone-200 focus:border-sky-500 py-1 placeholder-stone-300"/></div>
         </div>
         <div className="relative grid lg:grid-cols-2 gap-4">
           <AddressCard title="Sender" data={sender} set={setSender} addresses={settings.addresses}/>
           <button onClick={swap} title="Swap" className="hidden lg:flex absolute left-1/2 top-6 -translate-x-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-stone-200 border border-stone-300 hover:bg-stone-300 text-stone-700"><ArrowLeftRight className="w-4 h-4"/></button>
           <AddressCard title="Receiver" data={receiver} set={setReceiver} required residential={residential} setResidential={setRes} addresses={settings.addresses}/>
         </div>
-        {intl&&<div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2"><MapPin className="w-4 h-4"/>International shipment to <b>{receiver.country}</b> — FedEx &amp; DHL rates shown, customs info required below.</div>}
+        {intl&&<div className="flex items-center gap-2 text-sm text-sky-700 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2"><MapPin className="w-4 h-4"/>International shipment to <b>{receiver.country}</b> — FedEx &amp; DHL rates shown, customs info required below.</div>}
         <div className="flex flex-wrap items-center gap-3 text-xs">
           {verify?(verify.ok
             ?<span className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 font-medium"><CheckCircle2 className="w-3.5 h-3.5"/>Address verified</span>
-            :<span className="flex items-center gap-1.5 text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2.5 py-1 font-medium"><AlertTriangle className="w-3.5 h-3.5"/>{verify.issues.join(" · ")}</span>)
+            :<span className="flex items-center gap-1.5 text-sky-600 bg-sky-50 border border-sky-200 rounded-full px-2.5 py-1 font-medium"><AlertTriangle className="w-3.5 h-3.5"/>{verify.issues.join(" · ")}</span>)
             :<span className="flex items-center gap-1.5 text-stone-400"><ShieldCheck className="w-3.5 h-3.5"/>Verifying as you type…</span>}
-          {verify&&<span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border ${verify.type==="Residential"?"text-blue-700 bg-blue-50 border-blue-200":"text-stone-700 bg-stone-100 border-stone-200"}`}>{verify.type==="Residential"?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{verify.type}</span>}
+          {verify&&<span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border ${verify.type==="Residential"?"text-sky-700 bg-sky-50 border-sky-200":"text-stone-700 bg-stone-100 border-stone-200"}`}>{verify.type==="Residential"?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{verify.type}</span>}
         </div>
 
         <div className="bg-stone-100 border border-stone-200 rounded-lg p-3 space-y-2">
@@ -470,14 +663,14 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
             <div className="text-[11px] uppercase tracking-widest text-stone-600 font-semibold">Packages · {pieces.length}</div>
             <div className="flex items-center gap-4">
               <span className="text-[11px] text-stone-400 font-mono">total {totalWeight} lb</span>
-              <div className="flex items-center gap-1"><span className="text-[10px] uppercase tracking-widest text-stone-500">Insure $</span><input type="number" value={insurance} onChange={e=>setInsurance(e.target.value)} placeholder="0" className="w-16 bg-white border border-stone-300 rounded px-2 py-1 text-sm font-mono outline-none focus:border-blue-500 placeholder-stone-300"/></div>
-              <div className="flex items-center gap-1.5"><span className="text-[10px] uppercase tracking-widest text-stone-500">Signature</span><select value={sigOption} onChange={e=>{setSigOption(e.target.value);setSig(e.target.value!=="none");}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-blue-500"><option value="none">None</option><option value="direct">Direct signature</option><option value="indirect">Indirect signature</option><option value="adult">Adult signature</option></select></div>
+              <div className="flex items-center gap-1"><span className="text-[10px] uppercase tracking-widest text-stone-500">Insure $</span><input type="number" value={insurance} onChange={e=>setInsurance(e.target.value)} placeholder="0" className="w-16 bg-white border border-stone-300 rounded px-2 py-1 text-sm font-mono outline-none focus:border-sky-500 placeholder-stone-300"/></div>
+              <div className="flex items-center gap-1.5"><span className="text-[10px] uppercase tracking-widest text-stone-500">Signature</span><select value={sigOption} onChange={e=>{setSigOption(e.target.value);setSig(e.target.value!=="none");}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-sky-500"><option value="none">None</option><option value="direct">Direct signature</option><option value="indirect">Indirect signature</option><option value="adult">Adult signature</option></select></div>
             </div>
           </div>
           {pieces.map((p,i)=>(
             <div key={i} className="flex flex-wrap items-end gap-2 bg-white border border-stone-200 rounded px-2 py-2">
               <div className="text-[11px] text-stone-400 font-mono w-6">#{i+1}</div>
-              <div><div className="text-[10px] uppercase tracking-widest text-stone-500">Box</div><select onChange={e=>{const pr=(settings.boxes||SEED_BOXES)[+e.target.value];if(pr)setPiece(i,{L:pr.L,W:pr.W,H:pr.H,weight:p.weight});}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-blue-500"><option value="-1">Custom</option>{(settings.boxes||SEED_BOXES).map((pr,j)=><option key={pr.id} value={j}>{pr.name}</option>)}</select></div>
+              <div><div className="text-[10px] uppercase tracking-widest text-stone-500">Box</div><select onChange={e=>{const pr=(settings.boxes||SEED_BOXES)[+e.target.value];if(pr)setPiece(i,{L:pr.L,W:pr.W,H:pr.H,weight:p.weight});}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-sky-500"><option value="-1">Custom</option>{(settings.boxes||SEED_BOXES).map((pr,j)=><option key={pr.id} value={j}>{pr.name}</option>)}</select></div>
               <PkgInput label="Wt (lb)" value={p.weight} onChange={e=>setPiece(i,{weight:+e.target.value})} w="w-16"/>
               <PkgInput label="L" value={p.L} onChange={e=>setPiece(i,{L:+e.target.value})}/>
               <PkgInput label="W" value={p.W} onChange={e=>setPiece(i,{W:+e.target.value})}/>
@@ -489,8 +682,8 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
         </div>
 
         {intl&&(
-          <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-3 space-y-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-blue-700"><FileText className="w-4 h-4"/>Customs · Commercial invoice</div>
+          <div className="border border-sky-200 bg-sky-50/40 rounded-lg p-3 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-sky-700"><FileText className="w-4 h-4"/>Customs · Commercial invoice</div>
             <div className="grid sm:grid-cols-3 gap-2">
               <Field label="Reason for export"><Select value={customs.reason} onChange={e=>setCustoms({...customs,reason:e.target.value})}>{EXPORT_REASONS.map(r=><option key={r}>{r}</option>)}</Select></Field>
               <Field label="Incoterms"><Select value={customs.incoterm} onChange={e=>setCustoms({...customs,incoterm:e.target.value})}>{INCOTERMS.map(r=><option key={r}>{r}</option>)}</Select></Field>
@@ -500,18 +693,18 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
               <div className="hidden sm:flex text-[10px] uppercase tracking-wide text-stone-400 px-1 gap-2"><div className="flex-1">Description</div><div className="w-28">HTS code</div><div className="w-28">Origin</div><div className="w-12">Qty</div><div className="w-16">Unit $</div><div className="w-5"/></div>
               {customs.lines.map((l,i)=>(
                 <div key={i} className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
-                  <input value={l.desc} onChange={e=>setLine(i,{desc:e.target.value})} placeholder="Item description" className="flex-1 min-w-0 bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500"/>
-                  <input value={l.hts} onChange={e=>setLine(i,{hts:e.target.value})} list="htscodes" placeholder="HTS" className="w-28 bg-white border border-stone-200 rounded px-2 py-1.5 text-sm font-mono outline-none focus:border-blue-500"/>
-                  <select value={l.origin} onChange={e=>setLine(i,{origin:e.target.value})} className="w-28 bg-white border border-stone-200 rounded px-1 py-1.5 text-sm outline-none focus:border-blue-500">{COUNTRIES.map(c=><option key={c}>{c}</option>)}</select>
-                  <input type="number" value={l.qty} onChange={e=>setLine(i,{qty:+e.target.value})} className="w-12 bg-white border border-stone-200 rounded px-2 py-1.5 text-sm font-mono outline-none focus:border-blue-500"/>
-                  <input type="number" value={l.value} onChange={e=>setLine(i,{value:e.target.value})} placeholder="0.00" className="w-16 bg-white border border-stone-200 rounded px-2 py-1.5 text-sm font-mono outline-none focus:border-blue-500 placeholder-stone-300"/>
+                  <input value={l.desc} onChange={e=>setLine(i,{desc:e.target.value})} placeholder="Item description" className="flex-1 min-w-0 bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-sky-500"/>
+                  <input value={l.hts} onChange={e=>setLine(i,{hts:e.target.value})} list="htscodes" placeholder="HTS" className="w-28 bg-white border border-stone-200 rounded px-2 py-1.5 text-sm font-mono outline-none focus:border-sky-500"/>
+                  <select value={l.origin} onChange={e=>setLine(i,{origin:e.target.value})} className="w-28 bg-white border border-stone-200 rounded px-1 py-1.5 text-sm outline-none focus:border-sky-500">{COUNTRIES.map(c=><option key={c}>{c}</option>)}</select>
+                  <input type="number" value={l.qty} onChange={e=>setLine(i,{qty:+e.target.value})} className="w-12 bg-white border border-stone-200 rounded px-2 py-1.5 text-sm font-mono outline-none focus:border-sky-500"/>
+                  <input type="number" value={l.value} onChange={e=>setLine(i,{value:e.target.value})} placeholder="0.00" className="w-16 bg-white border border-stone-200 rounded px-2 py-1.5 text-sm font-mono outline-none focus:border-sky-500 placeholder-stone-300"/>
                   <button onClick={()=>delLine(i)} className="text-stone-300 hover:text-rose-500 w-5"><X className="w-4 h-4"/></button>
                 </div>
               ))}
               <datalist id="htscodes">{HTS_SUGGEST.map(h=><option key={h.code} value={h.code}>{h.desc}</option>)}</datalist>
               <button onClick={addLine} className="flex items-center gap-1 text-xs bg-white border border-stone-200 hover:bg-stone-100 rounded px-2.5 py-1.5 font-medium text-stone-700"><Plus className="w-3.5 h-3.5"/>Add item</button>
             </div>
-            <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-blue-200">
+            <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-sky-200">
               <div className="text-sm">Declared value <span className="font-mono font-semibold">{money(customsTotal)}</span></div>
               <button onClick={()=>setShowCI(s=>!s)} className="text-sm bg-stone-900 text-white rounded px-3 py-1.5 font-medium flex items-center gap-1.5 hover:bg-stone-800"><FileText className="w-4 h-4"/>{showCI?"Hide":"View"} commercial invoice</button>
             </div>
@@ -520,13 +713,13 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
         )}
 
         {selectedOrder&&(()=>{const so=orders.find(o=>o.id===selectedOrder);return so&&(so.shippingService||so.source)?<div className="flex items-center gap-2 text-xs text-stone-600 bg-stone-100 border border-stone-200 rounded-lg px-3 py-2"><Truck className="w-3.5 h-3.5 text-stone-400"/>From order <b>{so.name}</b>{so.source?` (${so.source})`:""} — buyer requested <b>{so.shippingService||"Standard"}</b>.</div>:null;})()}
-        {ready&&<div className={`flex items-center gap-2 text-xs rounded-lg px-3 py-2 ${rateSrc.loading?"bg-stone-100 text-stone-500":rateSrc.live?"bg-emerald-50 text-emerald-700 border border-emerald-200":"bg-blue-50 text-blue-700 border border-blue-200"}`}>
+        {ready&&<div className={`flex items-center gap-2 text-xs rounded-lg px-3 py-2 ${rateSrc.loading?"bg-stone-100 text-stone-500":rateSrc.live?"bg-emerald-50 text-emerald-700 border border-emerald-200":"bg-sky-50 text-sky-700 border border-sky-200"}`}>
           {rateSrc.loading?<><Loader2 className="w-3.5 h-3.5 animate-spin"/>Fetching live rates…</>
           :rateSrc.live?<><Wifi className="w-3.5 h-3.5"/>Live rates from your England account</>
           :<><Calculator className="w-3.5 h-3.5"/>Estimated rates{rateSrc.error?` · ${rateSrc.error}`:""} — connect your England account in Settings → Carrier accounts for live pricing</>}
         </div>}
         <ServiceList quotes={quotes} best={best} bought={bought} action={ready?print:null} label="Print label" doneLabel="Printed" ready={ready}/>
-        {shipStatus&&<div className={`flex items-center gap-2 text-sm rounded-lg px-3 py-2.5 ${shipStatus.state==="error"?"bg-rose-50 text-rose-700 border border-rose-200":shipStatus.state==="booked"?"bg-emerald-50 text-emerald-700 border border-emerald-200":shipStatus.state==="pending_timeout"?"bg-amber-50 text-amber-700 border border-amber-200":"bg-blue-50 text-blue-700 border border-blue-200"}`}>
+        {shipStatus&&<div className={`flex items-center gap-2 text-sm rounded-lg px-3 py-2.5 ${shipStatus.state==="error"?"bg-rose-50 text-rose-700 border border-rose-200":shipStatus.state==="booked"?"bg-emerald-50 text-emerald-700 border border-emerald-200":shipStatus.state==="pending_timeout"?"bg-amber-50 text-amber-700 border border-amber-200":"bg-sky-50 text-sky-700 border border-sky-200"}`}>
           {shipStatus.state==="booking"&&<><Loader2 className="w-4 h-4 animate-spin"/>Booking label on your England account…</>}
           {shipStatus.state==="pending"&&<><Loader2 className="w-4 h-4 animate-spin"/>Order pushed to England — waiting for it to book and return the label…</>}
           {shipStatus.state==="booked"&&<><CheckCircle2 className="w-4 h-4"/>Label printed{shipStatus.tracking?<> · tracking <span className="font-mono">{shipStatus.tracking}</span></>:""} — moved to Shipments.</>}
@@ -537,11 +730,11 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
         <div className="border border-stone-200 rounded-lg bg-white p-3 space-y-3">
           <div className="text-[11px] uppercase tracking-widest text-stone-600 font-semibold">Billing &amp; third-party</div>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={returnDiff} onChange={e=>setReturnDiff(e.target.checked)} className="accent-blue-600"/>Return address differs from sender</label>
+            <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={returnDiff} onChange={e=>setReturnDiff(e.target.checked)} className="accent-sky-600"/>Return address differs from sender</label>
             <div className="flex items-center gap-2 text-sm">
               <span className="text-stone-500 flex items-center gap-1"><CreditCard className="w-3.5 h-3.5"/>Bill to</span>
-              <select value={billTo} onChange={e=>setBillTo(e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1 text-sm outline-none focus:border-blue-500"><option value="sender">Sender (you)</option><option value="receiver">Receiver</option><option value="third">Third-party acct</option></select>
-              {billTo==="third"&&<input value={thirdAcct} onChange={e=>setThirdAcct(e.target.value)} placeholder="3rd-party acct #" className="bg-white border border-stone-200 rounded px-2 py-1 text-sm w-40 outline-none focus:border-blue-500 font-mono"/>}
+              <select value={billTo} onChange={e=>setBillTo(e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1 text-sm outline-none focus:border-sky-500"><option value="sender">Sender (you)</option><option value="receiver">Receiver</option><option value="third">Third-party acct</option></select>
+              {billTo==="third"&&<input value={thirdAcct} onChange={e=>setThirdAcct(e.target.value)} placeholder="3rd-party acct #" className="bg-white border border-stone-200 rounded px-2 py-1 text-sm w-40 outline-none focus:border-sky-500 font-mono"/>}
             </div>
           </div>
         </div>
@@ -549,7 +742,7 @@ function Ship({client,accounts,orders,settings,rules,drafts,setDrafts,prefill,cl
         <div className="border border-stone-200 rounded-lg bg-white p-3 space-y-3">
           <div className="text-[11px] uppercase tracking-widest text-stone-600 font-semibold flex items-center gap-1.5"><Send className="w-3.5 h-3.5"/>Send label &amp; notify</div>
           <div className="flex flex-wrap items-end gap-3">
-            <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">Send to email</div><input value={emailTo} onChange={e=>setEmailTo(e.target.value)} placeholder={receiver.email||"customer@example.com"} className="w-full bg-white border border-stone-200 rounded px-2.5 py-2 text-sm outline-none focus:border-blue-500 placeholder-stone-300"/></div>
+            <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">Send to email</div><input value={emailTo} onChange={e=>setEmailTo(e.target.value)} placeholder={receiver.email||"customer@example.com"} className="w-full bg-white border border-stone-200 rounded px-2.5 py-2 text-sm outline-none focus:border-sky-500 placeholder-stone-300"/></div>
             <button onClick={sendLabel} className={`flex items-center gap-1.5 text-sm rounded px-3 py-2 font-medium ${sent==="label"?"bg-emerald-600 text-white":"bg-stone-900 text-white hover:bg-stone-800"}`}>{sent==="label"?<><Check className="w-4 h-4"/>Label sent</>:<><Printer className="w-4 h-4"/>Send shipping label</>}</button>
             <button onClick={sendEmail} className={`flex items-center gap-1.5 text-sm rounded px-3 py-2 font-medium ${sent==="email"?"bg-emerald-600 text-white":"bg-stone-200 text-stone-700 hover:bg-stone-300"}`}>{sent==="email"?<><Check className="w-4 h-4"/>Email sent</>:<><Mail className="w-4 h-4"/>Send tracking email</>}</button>
           </div>
@@ -614,16 +807,16 @@ function ServiceList({quotes,best,bought,action,label,doneLabel,showCost,ready=t
     }
     const live=!!(q.surcharges&&q.surcharges.length);
     return (
-      <div key={q.key} className={`border rounded-lg ${q.key===best&&ready?"border-blue-200 bg-blue-50":"border-stone-200 bg-white"}`}>
+      <div key={q.key} className={`border rounded-lg ${q.key===best&&ready?"border-sky-200 bg-sky-50":"border-stone-200 bg-white"}`}>
         <div className="px-3 py-2.5 flex items-center gap-3">
           <button onClick={()=>setOpen(isOpen?null:q.key)} className="text-stone-400 shrink-0" title="Charge breakdown"><ChevronRight className={`w-4 h-4 transition-transform ${isOpen?"rotate-90":""}`}/></button>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">{view==="cheapest"&&<span className={`text-[10px] font-bold w-10 shrink-0 ${CARRIER_TINT[q.carrier]}`}>{q.carrier}</span>}<span className="text-sm truncate">{q.label}</span>{q.key===best&&ready&&<span className="text-[10px] uppercase text-blue-600 border border-blue-200 rounded px-1">best value</span>}</div>
+            <div className="flex items-center gap-2">{view==="cheapest"&&<span className={`text-[10px] font-bold w-10 shrink-0 ${CARRIER_TINT[q.carrier]}`}>{q.carrier}</span>}<span className="text-sm truncate">{q.label}</span>{q.key===best&&ready&&<span className="text-[10px] uppercase text-sky-600 border border-sky-200 rounded px-1">best value</span>}</div>
             <div className="text-[11px] text-stone-500">{ready&&days?(<span className="flex items-center gap-1"><Calendar className="w-3 h-3"/>{days} business day{days>1?"s":""}{eta?` · arrives ${fmtDeliv(eta)}`:""}</span>):""}</div>
           </div>
           {showCost&&<div className="text-right font-mono hidden sm:block"><div className="text-[10px] uppercase tracking-widest text-stone-400">cost</div><div className="text-sm text-stone-500">{ready?money(q.cost):"—"}</div></div>}
           <div className="text-right font-mono"><div className="text-base font-semibold text-stone-900">{ready?money(sell):"—"}</div></div>
-          {action&&<button onClick={()=>action(q)} disabled={!ready} className={`shrink-0 w-32 text-sm rounded px-3 py-2 font-medium flex items-center justify-center gap-1.5 disabled:opacity-40 ${bought===q.key?"bg-blue-600 text-white":"bg-stone-900 text-white hover:bg-stone-800"}`}>{bought===q.key?<><Check className="w-4 h-4"/>{doneLabel}</>:<><Printer className="w-4 h-4"/>{label}</>}</button>}
+          {action&&<button onClick={()=>action(q)} disabled={!ready} className={`shrink-0 w-32 text-sm rounded px-3 py-2 font-medium flex items-center justify-center gap-1.5 disabled:opacity-40 ${bought===q.key?"bg-sky-600 text-white":"bg-stone-900 text-white hover:bg-stone-800"}`}>{bought===q.key?<><Check className="w-4 h-4"/>{doneLabel}</>:<><Printer className="w-4 h-4"/>{label}</>}</button>}
         </div>
         {isOpen&&ready&&<div className="px-4 pb-3 pt-1 border-t border-stone-100">
           <div className="text-[10px] uppercase tracking-widest text-stone-400 mb-1.5">Rate breakdown{live?"":" · estimated"}</div>
@@ -677,8 +870,8 @@ function Orders({orders,setOrders,goShip,client,settings,onShipped}){
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex bg-stone-100 rounded-lg p-0.5 text-sm">{["all","unfulfilled","fulfilled"].map(f=><button key={f} onClick={()=>setFilter(f)} className={`px-3 py-1.5 rounded-md capitalize ${filter===f?"bg-white shadow-sm text-stone-900 font-medium":"text-stone-500"}`}>{f}</button>)}</div>
-        <div className="flex-1 relative min-w-0"><Search className="w-4 h-4 absolute left-2.5 top-2.5 text-stone-400"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search orders" className="w-full bg-white border border-stone-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:border-blue-500"/></div>
-        <div className="flex items-center gap-1.5 text-sm"><span className="text-stone-500">Sort</span><select value={sort} onChange={e=>setSort(e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500"><option value="date">Newest</option><option value="total">Order total</option><option value="customer">Customer</option><option value="state">Dest. state</option><option value="weight">Weight</option><option value="source">Source</option></select></div>
+        <div className="flex-1 relative min-w-0"><Search className="w-4 h-4 absolute left-2.5 top-2.5 text-stone-400"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search orders" className="w-full bg-white border border-stone-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:border-sky-500"/></div>
+        <div className="flex items-center gap-1.5 text-sm"><span className="text-stone-500">Sort</span><select value={sort} onChange={e=>setSort(e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-sky-500"><option value="date">Newest</option><option value="total">Order total</option><option value="customer">Customer</option><option value="state">Dest. state</option><option value="weight">Weight</option><option value="source">Source</option></select></div>
         <button onClick={()=>setAdding(true)} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded px-3 py-2 font-medium hover:bg-stone-800"><Plus className="w-4 h-4"/>New order</button>
       </div>
       {adding&&<NewOrderForm onClose={()=>setAdding(false)} onCreate={(o)=>{setOrders(p=>[o,...p]);setAdding(false);}}/>}
@@ -772,16 +965,16 @@ function OrderDetail({o,setOrders,client,settings,onShipped,goShip}){
         <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2"><CheckCircle2 className="w-4 h-4"/>Shipped{o.tracking?<> · tracking <a className="underline font-mono" href={TRACK_URL[carrierOf("FedEx")](o.tracking)} target="_blank" rel="noopener">{o.tracking}</a></>:""}</div>
       ):(<>
         <div className="flex flex-wrap items-end gap-3 border border-stone-200 rounded-lg bg-white p-3">
-          <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Weight (lb)</div><input type="number" value={weight} onChange={e=>{setWeight(+e.target.value);upd({weight:+e.target.value});}} className="w-20 bg-white border border-stone-300 rounded px-2 py-1 text-sm font-mono outline-none focus:border-blue-500"/></div>
-          <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Box</div><select value={boxIdx} onChange={e=>setBoxIdx(+e.target.value)} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-blue-500"><option value="-1">Default 12×9×4</option>{boxes.map((b,j)=><option key={b.id} value={j}>{b.name}</option>)}</select></div>
-          <label className="flex items-center gap-1.5 text-sm text-stone-600"><input type="checkbox" checked={residential} onChange={e=>setRes(e.target.checked)} className="accent-blue-600"/>Residential</label>
-          <span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border ${residential?"text-blue-700 bg-blue-50 border-blue-200":"text-stone-700 bg-stone-100 border-stone-200"}`}>{residential?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{residential?"Residential":"Commercial"}</span>
+          <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Weight (lb)</div><input type="number" value={weight} onChange={e=>{setWeight(+e.target.value);upd({weight:+e.target.value});}} className="w-20 bg-white border border-stone-300 rounded px-2 py-1 text-sm font-mono outline-none focus:border-sky-500"/></div>
+          <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Box</div><select value={boxIdx} onChange={e=>setBoxIdx(+e.target.value)} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-sky-500"><option value="-1">Default 12×9×4</option>{boxes.map((b,j)=><option key={b.id} value={j}>{b.name}</option>)}</select></div>
+          <label className="flex items-center gap-1.5 text-sm text-stone-600"><input type="checkbox" checked={residential} onChange={e=>setRes(e.target.checked)} className="accent-sky-600"/>Residential</label>
+          <span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border ${residential?"text-sky-700 bg-sky-50 border-sky-200":"text-stone-700 bg-stone-100 border-stone-200"}`}>{residential?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{residential?"Residential":"Commercial"}</span>
           <div className="flex-1"/>
           <button onClick={()=>goShip(o)} className="text-sm bg-stone-200 text-stone-700 rounded px-3 py-1.5 font-medium hover:bg-stone-300 flex items-center gap-1.5"><Edit3 className="w-3.5 h-3.5"/>Open in Ship tab</button>
         </div>
         {(o.shippingService||o.source)&&<div className="text-[12px] text-stone-500 flex items-center gap-1.5 -mt-1"><Truck className="w-3.5 h-3.5 text-stone-400"/>Buyer selected <b className="text-stone-700">{o.shippingService||"Standard"}</b>{o.source?` from ${o.source}`:""} — match it or pick the best rate below.</div>}
         <ServiceList quotes={quotes} best={best} bought={bought} action={ready?printHere:null} label="Buy & print" doneLabel="Printed" ready={ready}/>
-        {done&&<div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2"><CheckCircle2 className="w-4 h-4"/>Label created — order moved to Shipments.</div>}
+        {done&&<div className="flex items-center gap-2 text-sm text-sky-700 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2"><CheckCircle2 className="w-4 h-4"/>Label created — order moved to Shipments.</div>}
       </>)}
     </div>
   );
@@ -799,7 +992,7 @@ function Shipments({shipments,setShipments,goShip}){
   const list=term?shipments.filter(s=>[s.recipient?.name,s.tracking,s.reference,s.invoiceNo,s.poNo,s.service].filter(Boolean).some(v=>String(v).toLowerCase().includes(term))):shipments;
   return (
     <div className="space-y-3">
-      <div className="relative"><Search className="w-4 h-4 absolute left-3 top-2.5 text-stone-400"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search by name, tracking, order, reference or PO #" className="w-full bg-white border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm outline-none focus:border-blue-500"/></div>
+      <div className="relative"><Search className="w-4 h-4 absolute left-3 top-2.5 text-stone-400"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search by name, tracking, order, reference or PO #" className="w-full bg-white border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm outline-none focus:border-sky-500"/></div>
       <div className="border border-stone-200 rounded-lg overflow-hidden bg-white divide-y divide-stone-100">
         <div className="flex items-center gap-3 px-4 py-2 text-[11px] uppercase tracking-widest text-stone-400 bg-stone-50"><div className="w-4"/><div className="w-24">Date</div><div className="flex-1">Recipient</div><div className="w-40 hidden md:block">Tracking</div><div className="w-20 text-right">Rate</div><div className="w-24 text-right">Status</div></div>
         {list.length===0&&<div className="p-8 text-center text-sm text-stone-400">No shipments match “{q}”.</div>}
@@ -809,7 +1002,7 @@ function Shipments({shipments,setShipments,goShip}){
             <button onClick={()=>setOpen(open===s.id?null:s.id)} className="text-stone-400"><ChevronRight className={`w-4 h-4 transition-transform ${open===s.id?"rotate-90":""}`}/></button>
             <div className="w-24 text-sm font-mono text-stone-500">{s.date}</div>
             <div className="flex-1 min-w-0"><div className="text-sm text-stone-800 truncate">{s.recipient?.name||"—"}</div><div className="text-[11px] text-stone-400 truncate">{s.service}</div></div>
-            <div className="w-40 hidden md:block"><a href={TRACK_URL[s.carrier](s.tracking)} target="_blank" rel="noopener" className="text-blue-600 underline font-mono text-xs flex items-center gap-1 truncate">{s.tracking}<ExternalLink className="w-3 h-3 shrink-0"/></a></div>
+            <div className="w-40 hidden md:block"><a href={TRACK_URL[s.carrier](s.tracking)} target="_blank" rel="noopener" className="text-sky-600 underline font-mono text-xs flex items-center gap-1 truncate">{s.tracking}<ExternalLink className="w-3 h-3 shrink-0"/></a></div>
             <div className="w-20 text-right font-mono text-sm text-stone-900">{money(s.sell)}</div>
             <div className="w-24 text-right"><Badge tone={tone(s.status)}>{s.status}</Badge></div>
           </div>
@@ -817,7 +1010,7 @@ function Shipments({shipments,setShipments,goShip}){
             <div className="px-12 pb-4 pt-1 bg-stone-50/60 text-sm">
               <div className="grid sm:grid-cols-2 gap-x-8 gap-y-1 mb-3">
                 <Info k="Carrier / service" v={s.service}/>
-                <Info k="Tracking" v={<a href={TRACK_URL[s.carrier](s.tracking)} target="_blank" rel="noopener" className="text-blue-600 underline">{s.tracking} ↗</a>}/>
+                <Info k="Tracking" v={<a href={TRACK_URL[s.carrier](s.tracking)} target="_blank" rel="noopener" className="text-sky-600 underline">{s.tracking} ↗</a>}/>
                 <Info k="To" v={`${s.recipient?.name||""} — ${s.recipient?.city||""}, ${s.recipient?.state||""} ${s.recipient?.zip||""}`}/>
                 <Info k="From ZIP" v={s.fromZip}/>
                 <Info k="Packages" v={`${s.pieces?.length||1} pkg · ${s.weight} lb total`}/>
@@ -892,7 +1085,7 @@ function QuickQuote({onClose,client,england}){
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:p-8 bg-stone-900/40 backdrop-blur-sm overflow-auto" onClick={onClose}>
       <div className="bg-stone-50 rounded-xl border border-stone-200 shadow-xl w-full max-w-3xl" onClick={e=>e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 h-14 border-b border-stone-200">
-          <div className="flex items-center gap-2 font-semibold"><Calculator className="w-4 h-4 text-blue-600"/>Quick quote <span className="text-stone-400 font-normal text-sm">· ZIP to ZIP, no addresses</span></div>
+          <div className="flex items-center gap-2 font-semibold"><Calculator className="w-4 h-4 text-sky-600"/>Quick quote <span className="text-stone-400 font-normal text-sm">· ZIP to ZIP, no addresses</span></div>
           <button onClick={onClose} className="text-stone-400 hover:text-stone-700"><X className="w-5 h-5"/></button>
         </div>
         <div className="p-5 flex flex-col lg:flex-row gap-5">
@@ -902,7 +1095,7 @@ function QuickQuote({onClose,client,england}){
             <Field label="Dimensions (in)"><div className="grid grid-cols-3 gap-2">{["L","W","H"].map(k=><Input key={k} type="number" value={s[k]} onChange={e=>setS({...s,[k]:+e.target.value})}/>)}</div></Field>
             <Toggle on={s.residential} set={v=>setS({...s,residential:v})} label="Residential"/>
             <div className="grid grid-cols-2 gap-px bg-stone-200 border border-stone-200 rounded overflow-hidden font-mono text-center"><div className="bg-white py-2"><div className="text-[10px] uppercase text-stone-400">zone</div><div className="font-semibold">{zoneEst(s.fromZip,s.toZip)}</div></div><div className="bg-white py-2"><div className="text-[10px] uppercase text-stone-400">billable</div><div className="font-semibold">{billable(s.L,s.W,s.H,s.weight)} lb</div></div></div>
-            {ready&&<div className={`text-[11px] rounded px-2 py-1.5 flex items-center gap-1.5 ${rateSrc.loading?"bg-stone-100 text-stone-500":rateSrc.live?"bg-emerald-50 text-emerald-700":"bg-blue-50 text-blue-700"}`}>{rateSrc.loading?<><Loader2 className="w-3 h-3 animate-spin"/>Fetching…</>:rateSrc.live?<><Wifi className="w-3 h-3"/>Live rates</>:<><Calculator className="w-3 h-3"/>Estimated</>}</div>}
+            {ready&&<div className={`text-[11px] rounded px-2 py-1.5 flex items-center gap-1.5 ${rateSrc.loading?"bg-stone-100 text-stone-500":rateSrc.live?"bg-emerald-50 text-emerald-700":"bg-sky-50 text-sky-700"}`}>{rateSrc.loading?<><Loader2 className="w-3 h-3 animate-spin"/>Fetching…</>:rateSrc.live?<><Wifi className="w-3 h-3"/>Live rates</>:<><Calculator className="w-3 h-3"/>Estimated</>}</div>}
           </Panel></div>
           <div className="flex-1 min-w-0"><ServiceList quotes={quotes} ready={ready}/></div>
         </div>
@@ -934,11 +1127,11 @@ function Scan({orders,goShip,goTab}){
   };
   return (
     <div className="max-w-2xl space-y-4">
-      <div className="flex items-center gap-2"><ScanLine className="w-5 h-5 text-blue-600"/><h1 className="text-base font-semibold text-stone-800">Scan to ship</h1></div>
+      <div className="flex items-center gap-2"><ScanLine className="w-5 h-5 text-sky-600"/><h1 className="text-base font-semibold text-stone-800">Scan to ship</h1></div>
       <p className="text-sm text-stone-500">Scan an order barcode, SKU, or tracking number with your handheld scanner (or type it and press Enter). The matching order loads straight into the Ship tab, ready to print — same flow as ShipManager or SKU Savvy.</p>
-      <div className="border-2 border-dashed border-blue-200 rounded-xl bg-blue-50/40 p-6 flex flex-col items-center gap-3">
-        <ScanLine className="w-10 h-10 text-blue-400"/>
-        <input ref={inputRef} value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();submit(val);}}} placeholder="Scan or type a code, then Enter" className="w-full max-w-md text-center bg-white border border-stone-300 rounded-lg px-4 py-3 text-lg font-mono outline-none focus:border-blue-500"/>
+      <div className="border-2 border-dashed border-sky-200 rounded-xl bg-sky-50/40 p-6 flex flex-col items-center gap-3">
+        <ScanLine className="w-10 h-10 text-sky-400"/>
+        <input ref={inputRef} value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();submit(val);}}} placeholder="Scan or type a code, then Enter" className="w-full max-w-md text-center bg-white border border-stone-300 rounded-lg px-4 py-3 text-lg font-mono outline-none focus:border-sky-500"/>
         <button onClick={()=>submit(val)} className="text-sm bg-stone-900 text-white rounded px-5 py-2 font-medium hover:bg-stone-800">Look up</button>
         {err&&<div className="text-sm text-rose-600 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4"/>{err}</div>}
       </div>
@@ -973,7 +1166,7 @@ function Dashboard({shipments,orders,returns,goTab}){
   const onTime=live.filter(s=>s.status==="Delivered"&&s.onTime).length;
   const onTimePct=delivCount?Math.round((onTime/delivCount)*100):100;
   const active=live.filter(s=>["Label created","In transit","Out for delivery","Exception"].includes(s.status));
-  const Tile=({label,value,tone,Icon,onClick})=>(<button onClick={onClick} className="border border-stone-200 rounded-xl bg-white p-3 text-left hover:border-blue-200"><div className="flex items-center gap-1.5 text-[11px] uppercase tracking-widest text-stone-400">{Icon&&<Icon className="w-3.5 h-3.5"/>}{label}</div><div className={`text-2xl font-bold mt-1 ${tone||"text-stone-900"}`}>{value}</div></button>);
+  const Tile=({label,value,tone,Icon,onClick})=>(<button onClick={onClick} className="border border-stone-200 rounded-xl bg-white p-3 text-left hover:border-sky-200"><div className="flex items-center gap-1.5 text-[11px] uppercase tracking-widest text-stone-400">{Icon&&<Icon className="w-3.5 h-3.5"/>}{label}</div><div className={`text-2xl font-bold mt-1 ${tone||"text-stone-900"}`}>{value}</div></button>);
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -984,7 +1177,7 @@ function Dashboard({shipments,orders,returns,goTab}){
       </div>
 
       <div>
-        <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-semibold text-stone-700 flex items-center gap-2"><Truck className="w-4 h-4"/>Tracking</h3><button onClick={()=>goTab("shipments")} className="text-xs text-blue-600">View all →</button></div>
+        <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-semibold text-stone-700 flex items-center gap-2"><Truck className="w-4 h-4"/>Tracking</h3><button onClick={()=>goTab("shipments")} className="text-xs text-sky-600">View all →</button></div>
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <Tile label="In transit" value={inTransit} Icon={Truck} onClick={()=>goTab("shipments")}/>
           <Tile label="Out for delivery" value={outForDel} Icon={MapPin} onClick={()=>goTab("shipments")}/>
@@ -1003,11 +1196,11 @@ function Dashboard({shipments,orders,returns,goTab}){
               <div key={s.id} className="px-4 py-3">
                 <div className="flex items-center gap-3">
                   <span className={`text-[11px] font-bold w-10 ${CARRIER_TINT[s.carrier]}`}>{s.carrier}</span>
-                  <div className="flex-1 min-w-0"><div className="text-sm text-stone-800 truncate">{s.recipient?.name} · {s.recipient?.city}, {s.recipient?.state}</div><a href={TRACK_URL[s.carrier](s.tracking)} target="_blank" rel="noopener" className="text-[11px] text-blue-600 font-mono">{s.tracking}</a></div>
+                  <div className="flex-1 min-w-0"><div className="text-sm text-stone-800 truncate">{s.recipient?.name} · {s.recipient?.city}, {s.recipient?.state}</div><a href={TRACK_URL[s.carrier](s.tracking)} target="_blank" rel="noopener" className="text-[11px] text-sky-600 font-mono">{s.tracking}</a></div>
                   <Badge tone={exc?"rose":s.status==="Out for delivery"?"amber":"blue"}>{s.status}</Badge>
                 </div>
                 <div className="mt-2 flex items-center gap-2">
-                  <div className="flex-1 h-1.5 bg-stone-100 rounded-full overflow-hidden"><div className={`h-full ${exc?"bg-rose-400":"bg-blue-600"}`} style={{width:`${trackPct(s.status)}%`}}/></div>
+                  <div className="flex-1 h-1.5 bg-stone-100 rounded-full overflow-hidden"><div className={`h-full ${exc?"bg-rose-400":"bg-sky-600"}`} style={{width:`${trackPct(s.status)}%`}}/></div>
                   <span className={`text-[11px] ${exc?"text-rose-600":"text-stone-400"} w-28 truncate text-right`}>{s.lastScan}</span>
                 </div>
               </div>
@@ -1017,19 +1210,19 @@ function Dashboard({shipments,orders,returns,goTab}){
         <div className="space-y-4">
           <div className="border border-stone-200 rounded-xl bg-white p-4">
             <h3 className="text-sm font-semibold text-stone-700 mb-4">Carrier mix</h3>
-            <div className="space-y-3">{carriers.map(([c,n])=>(<div key={c}><div className="flex justify-between text-xs mb-1"><span className={`font-semibold ${CARRIER_TINT[c]}`}>{c}</span><span className="text-stone-400">{n}</span></div><div className="h-2 bg-stone-100 rounded-full overflow-hidden"><div className="h-full bg-blue-600 rounded-full" style={{width:`${(n/a.count)*100}%`}}/></div></div>))}</div>
+            <div className="space-y-3">{carriers.map(([c,n])=>(<div key={c}><div className="flex justify-between text-xs mb-1"><span className={`font-semibold ${CARRIER_TINT[c]}`}>{c}</span><span className="text-stone-400">{n}</span></div><div className="h-2 bg-stone-100 rounded-full overflow-hidden"><div className="h-full bg-sky-600 rounded-full" style={{width:`${(n/a.count)*100}%`}}/></div></div>))}</div>
           </div>
           <div className="border border-stone-200 rounded-xl bg-white p-4">
             <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-semibold text-stone-700">Volume · 7 days</h3></div>
-            <div className="flex items-end gap-2 h-24">{a.byDay.map((v,i)=>(<div key={i} className="flex-1 flex flex-col items-center gap-1"><div className="w-full bg-blue-100 rounded-t" style={{height:`${Math.max(4,(v/maxDay)*100)}%`}}/><span className="text-[10px] text-stone-400">{days[i]}</span></div>))}</div>
+            <div className="flex items-end gap-2 h-24">{a.byDay.map((v,i)=>(<div key={i} className="flex-1 flex flex-col items-center gap-1"><div className="w-full bg-sky-100 rounded-t" style={{height:`${Math.max(4,(v/maxDay)*100)}%`}}/><span className="text-[10px] text-stone-400">{days[i]}</span></div>))}</div>
           </div>
         </div>
       </div>
 
       <div className="grid sm:grid-cols-3 gap-3">
-        <button onClick={()=>goTab("orders")} className="border border-stone-200 rounded-xl bg-white p-4 text-left hover:border-blue-200"><div className="flex items-center gap-2 text-blue-600"><ShoppingBag className="w-4 h-4"/><span className="font-semibold">{orders.filter(o=>o.status==="unfulfilled").length} orders to ship</span></div><div className="text-[11px] text-stone-400 mt-1">Open the queue →</div></button>
-        <button onClick={()=>goTab("returns")} className="border border-stone-200 rounded-xl bg-white p-4 text-left hover:border-blue-200"><div className="flex items-center gap-2 text-blue-600"><Undo2 className="w-4 h-4"/><span className="font-semibold">{returns.length} open returns</span></div><div className="text-[11px] text-stone-400 mt-1">Manage RMAs →</div></button>
-        <button onClick={()=>goTab("shipments")} className="border border-stone-200 rounded-xl bg-white p-4 text-left hover:border-blue-200"><div className="flex items-center gap-2 text-blue-600"><TrendingUp className="w-4 h-4"/><span className="font-semibold">{money(a.count?a.revenue/a.count:0)} avg / label</span></div><div className="text-[11px] text-stone-400 mt-1">Shipment history →</div></button>
+        <button onClick={()=>goTab("orders")} className="border border-stone-200 rounded-xl bg-white p-4 text-left hover:border-sky-200"><div className="flex items-center gap-2 text-sky-600"><ShoppingBag className="w-4 h-4"/><span className="font-semibold">{orders.filter(o=>o.status==="unfulfilled").length} orders to ship</span></div><div className="text-[11px] text-stone-400 mt-1">Open the queue →</div></button>
+        <button onClick={()=>goTab("returns")} className="border border-stone-200 rounded-xl bg-white p-4 text-left hover:border-sky-200"><div className="flex items-center gap-2 text-sky-600"><Undo2 className="w-4 h-4"/><span className="font-semibold">{returns.length} open returns</span></div><div className="text-[11px] text-stone-400 mt-1">Manage RMAs →</div></button>
+        <button onClick={()=>goTab("shipments")} className="border border-stone-200 rounded-xl bg-white p-4 text-left hover:border-sky-200"><div className="flex items-center gap-2 text-sky-600"><TrendingUp className="w-4 h-4"/><span className="font-semibold">{money(a.count?a.revenue/a.count:0)} avg / label</span></div><div className="text-[11px] text-stone-400 mt-1">Shipment history →</div></button>
       </div>
     </div>
   );
@@ -1074,8 +1267,8 @@ function Batch({orders,setOrders,client,rules,onShipped}){
   const groupKeys=Object.keys(groups).sort();
   const selectGroup=(arr)=>setSel(s=>{const n=new Set(s);const allOn=arr.every(o=>n.has(o.id));arr.forEach(o=>allOn?n.delete(o.id):n.add(o.id));return n;});
   const OrderRow=(o)=>{const q=rateFor(o);const on=sel.has(o.id);return (
-    <label key={o.id} className={`flex items-center gap-3 px-4 py-3 cursor-pointer ${on?"bg-blue-50/50":"hover:bg-stone-50"}`}>
-      <input type="checkbox" checked={on} onChange={()=>toggle(o.id)} className="accent-blue-600"/>
+    <label key={o.id} className={`flex items-center gap-3 px-4 py-3 cursor-pointer ${on?"bg-sky-50/50":"hover:bg-stone-50"}`}>
+      <input type="checkbox" checked={on} onChange={()=>toggle(o.id)} className="accent-sky-600"/>
       <div className="w-14 font-semibold text-sm">{o.name}</div>
       <div className="flex-1 min-w-0"><div className="text-sm truncate">{o.customer}</div><div className="text-[11px] text-stone-400">{o.city}, {o.state} · {o.weight} lb · {o.sku}</div></div>
       <div className="w-28 hidden sm:block text-xs text-stone-500 truncate">{q.label}</div>
@@ -1089,15 +1282,15 @@ function Batch({orders,setOrders,client,rules,onShipped}){
         <label className="flex items-center gap-1.5 text-sm bg-stone-200 text-stone-700 rounded px-2.5 py-1.5 font-medium hover:bg-stone-300 cursor-pointer"><Upload className="w-4 h-4"/>Import CSV<input type="file" accept=".csv,text/csv" onChange={importCSV} className="hidden"/></label>
         <div className="flex-1"/>
         <span className="text-sm text-stone-500">Group by</span>
-        <select value={groupBy} onChange={e=>setGroupBy(e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500"><option value="none">None</option><option value="sku">SKU</option><option value="product">Product name</option><option value="zone">Zone</option><option value="service">Service</option><option value="state">Dest. state</option></select>
+        <select value={groupBy} onChange={e=>setGroupBy(e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-sky-500"><option value="none">None</option><option value="sku">SKU</option><option value="product">Product name</option><option value="zone">Zone</option><option value="service">Service</option><option value="state">Dest. state</option></select>
         <span className="text-sm text-stone-500">Rate rule</span>
-        <select value={rule} onChange={e=>setRule(e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500"><option value="cheapest">Cheapest overall</option><option value="ground">Cheapest ground</option></select>
+        <select value={rule} onChange={e=>setRule(e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-sky-500"><option value="cheapest">Cheapest overall</option><option value="ground">Cheapest ground</option></select>
       </div>
       <div className="text-[11px] text-stone-400">CSV columns recognized: customer, company, address, city, state, zip, phone, email, weight, items, total, sku, service (header row optional).</div>
       {msg&&<div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5 text-sm text-emerald-700 flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/>{msg}</div>}
-      {done>0&&<div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-700 flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/>Printed {done} labels — orders moved to Shipments.</div>}
+      {done>0&&<div className="bg-sky-50 border border-sky-200 rounded-lg px-4 py-3 text-sm text-sky-700 flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/>Printed {done} labels — orders moved to Shipments.</div>}
       <div className="border border-stone-200 rounded-lg overflow-hidden bg-white divide-y divide-stone-100">
-        <div className="flex items-center gap-3 px-4 py-2 bg-stone-50 text-[11px] uppercase tracking-widest text-stone-400"><input type="checkbox" checked={sel.size===pool.length&&pool.length>0} onChange={all} className="accent-blue-600"/><div className="w-14">Order</div><div className="flex-1">Customer</div><div className="w-28 hidden sm:block">Service</div><div className="w-20 text-right">Rate</div></div>
+        <div className="flex items-center gap-3 px-4 py-2 bg-stone-50 text-[11px] uppercase tracking-widest text-stone-400"><input type="checkbox" checked={sel.size===pool.length&&pool.length>0} onChange={all} className="accent-sky-600"/><div className="w-14">Order</div><div className="flex-1">Customer</div><div className="w-28 hidden sm:block">Service</div><div className="w-20 text-right">Rate</div></div>
         {pool.length===0&&<div className="p-8 text-center text-sm text-stone-400">No unfulfilled orders to batch.</div>}
         {groupBy==="none"
           ? pool.map(OrderRow)
@@ -1139,10 +1332,10 @@ function Returns({returns,setReturns,orders,settings,logEmail}){
         {returns.length===0&&<div className="p-8 text-center text-sm text-stone-400">No returns yet.</div>}
         {returns.map(r=>(
           <div key={r.id} className="flex items-center gap-3 px-4 py-3 hover:bg-stone-50">
-            <div className="w-24 font-mono text-sm font-semibold text-blue-600">{r.rma}</div>
+            <div className="w-24 font-mono text-sm font-semibold text-sky-600">{r.rma}</div>
             <div className="flex-1 min-w-0"><div className="text-sm truncate">{r.customer}</div><div className="text-[11px] text-stone-400">{r.order?`${r.order} · `:""}{r.reason}</div></div>
             <div className={`text-xs font-bold hidden sm:block ${CARRIER_TINT[r.carrier]}`}>{r.carrier}</div>
-            <a href={TRACK_URL[r.carrier](r.tracking)} target="_blank" rel="noopener" className="text-blue-600 underline font-mono text-xs flex items-center gap-1 w-36 truncate">{r.tracking}<ExternalLink className="w-3 h-3 shrink-0"/></a>
+            <a href={TRACK_URL[r.carrier](r.tracking)} target="_blank" rel="noopener" className="text-sky-600 underline font-mono text-xs flex items-center gap-1 w-36 truncate">{r.tracking}<ExternalLink className="w-3 h-3 shrink-0"/></a>
             <Badge tone={tone(r.status)}>{r.status}</Badge>
           </div>
         ))}
@@ -1192,7 +1385,7 @@ function Reports({shipments}){
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-sm font-semibold text-stone-700 flex items-center gap-2"><TrendingUp className="w-4 h-4"/>Reports</h2>
         <div className="flex-1"/>
-        <select value={range} onChange={e=>setRange(+e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-blue-500"><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={0}>All time</option></select>
+        <select value={range} onChange={e=>setRange(+e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-sky-500"><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={0}>All time</option></select>
         <button onClick={exportCSV} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded px-3 py-1.5 font-medium hover:bg-stone-800"><Download className="w-4 h-4"/>Export CSV</button>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1262,7 +1455,7 @@ function CheckoutRates({settings,setSettings,client}){
             <div key={k} className="flex items-center gap-3 py-1.5">
               <span className={`text-[10px] font-bold w-12 ${CARRIER_TINT[RATES[k].carrier]}`}>{RATES[k].carrier}</span>
               <span className="flex-1 text-sm">{RATES[k].label}</span>
-              <button onClick={()=>toggleSvc(k)}><span className={`w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${ck.services[k]?"bg-blue-600 justify-end":"bg-stone-300 justify-start"}`}><span className="w-4 h-4 bg-white rounded-full"/></span></button>
+              <button onClick={()=>toggleSvc(k)}><span className={`w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${ck.services[k]?"bg-sky-600 justify-end":"bg-stone-300 justify-start"}`}><span className="w-4 h-4 bg-white rounded-full"/></span></button>
             </div>
           ))}</div>
         </Panel>
@@ -1270,7 +1463,7 @@ function CheckoutRates({settings,setSettings,client}){
       {/* PREVIEW */}
       <div className="space-y-4">
         <div className="border border-stone-200 rounded-lg bg-white p-4">
-          <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-semibold text-stone-700 flex items-center gap-2"><Calculator className="w-4 h-4"/>Test cart</h3><div className="flex items-center gap-1.5 text-sm"><span className="text-stone-400">Ship to</span><input value={zip} onChange={e=>setZip(e.target.value)} className="w-20 bg-white border border-stone-200 rounded px-2 py-1 text-sm font-mono outline-none focus:border-blue-500"/></div></div>
+          <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-semibold text-stone-700 flex items-center gap-2"><Calculator className="w-4 h-4"/>Test cart</h3><div className="flex items-center gap-1.5 text-sm"><span className="text-stone-400">Ship to</span><input value={zip} onChange={e=>setZip(e.target.value)} className="w-20 bg-white border border-stone-200 rounded px-2 py-1 text-sm font-mono outline-none focus:border-sky-500"/></div></div>
           <div className="space-y-1.5">{CART_ITEMS.map((it,i)=>(
             <div key={i} className="flex items-center gap-3 text-sm">
               <div className="flex-1"><span className="text-stone-800">{it.name}</span><span className="text-[11px] text-stone-400 ml-2 font-mono">{it.l}×{it.w}×{it.h} · {it.wt}lb · ${it.price}</span></div>
@@ -1282,8 +1475,8 @@ function CheckoutRates({settings,setSettings,client}){
         </div>
 
         {pack&&(
-          <div className="border border-blue-200 bg-blue-50/50 rounded-lg p-3 flex items-center gap-3">
-            <Boxes className="w-5 h-5 text-blue-600"/>
+          <div className="border border-sky-200 bg-sky-50/50 rounded-lg p-3 flex items-center gap-3">
+            <Boxes className="w-5 h-5 text-sky-600"/>
             <div className="flex-1 text-sm"><div className="font-medium text-stone-800">Box logic picked: {pack.box.name}{pack.count>1?` ×${pack.count}`:""}</div><div className="text-[11px] text-stone-500">{pack.box.L}×{pack.box.W}×{pack.box.H} in · billable {pack.billWt} lb · {pack.reason}</div></div>
           </div>
         )}
@@ -1402,7 +1595,7 @@ function BoxLogic({settings,setSettings}){
       <div className="bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-[12px] text-stone-600 font-mono">Example: a 12×9×4 box ÷ {bl.dimDivisor} = {(12*9*4/bl.dimDivisor).toFixed(1)} lb dim weight</div>
     </Panel>
     <Panel title="Options">
-      <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={bl.allowOverride} onChange={e=>set({allowOverride:e.target.checked})} className="accent-blue-600"/>Let users override the chosen box on the Ship tab</label>
+      <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={bl.allowOverride} onChange={e=>set({allowOverride:e.target.checked})} className="accent-sky-600"/>Let users override the chosen box on the Ship tab</label>
       <div className="text-[12px] text-stone-500">Box catalog in use: <b>{boxes.length}</b> boxes (edit them under <b>Package sizes</b>).</div>
     </Panel>
   </div>);
@@ -1430,11 +1623,11 @@ function PrinterSettings({settings,setSettings}){
         </Field>
       </div>
       <Field label="Default printer (optional)"><Input value={pr.printer} onChange={e=>set({printer:e.target.value})} placeholder="e.g. Zebra ZP 450"/></Field>
-      <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={pr.rotate} onChange={e=>set({rotate:e.target.checked})} className="accent-blue-600"/>Rotate label 180° (for some thermal printers)</label>
-      <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={pr.autoPrint} onChange={e=>set({autoPrint:e.target.checked})} className="accent-blue-600"/>Auto-open the print dialog after a label is bought</label>
+      <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={pr.rotate} onChange={e=>set({rotate:e.target.checked})} className="accent-sky-600"/>Rotate label 180° (for some thermal printers)</label>
+      <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={pr.autoPrint} onChange={e=>set({autoPrint:e.target.checked})} className="accent-sky-600"/>Auto-open the print dialog after a label is bought</label>
     </Panel>
     <Panel title="Packing slip">
-      <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={pr.packingSlip} onChange={e=>set({packingSlip:e.target.checked})} className="accent-blue-600"/>Generate a packing slip with each label</label>
+      <label className="flex items-center gap-2 text-sm text-stone-600"><input type="checkbox" checked={pr.packingSlip} onChange={e=>set({packingSlip:e.target.checked})} className="accent-sky-600"/>Generate a packing slip with each label</label>
       <Field label="Packing slip size">
         <Select value={pr.slipSize} onChange={e=>set({slipSize:e.target.value})}>
           <option value="letter">8.5×11 Letter</option>
@@ -1452,7 +1645,7 @@ function Notifications({settings,setSettings,emails}){
   return (<div className="space-y-4 max-w-2xl">
     <p className="text-sm text-stone-500">Automated emails fire on shipping & warehouse events. Toggle what sends — the log below records every send.</p>
     <div className="border border-stone-200 rounded-lg bg-white divide-y divide-stone-100">
-      {items.map(([k,l,d])=>(<div key={k} className="flex items-center gap-3 px-4 py-3"><div className="flex-1"><div className="text-sm font-medium">{l}</div><div className="text-[11px] text-stone-400">{d}</div></div><button onClick={()=>toggle(k)}><span className={`w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${N[k]?"bg-blue-600 justify-end":"bg-stone-300 justify-start"}`}><span className="w-4 h-4 bg-white rounded-full"/></span></button></div>))}
+      {items.map(([k,l,d])=>(<div key={k} className="flex items-center gap-3 px-4 py-3"><div className="flex-1"><div className="text-sm font-medium">{l}</div><div className="text-[11px] text-stone-400">{d}</div></div><button onClick={()=>toggle(k)}><span className={`w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${N[k]?"bg-sky-600 justify-end":"bg-stone-300 justify-start"}`}><span className="w-4 h-4 bg-white rounded-full"/></span></button></div>))}
     </div>
     <div>
       <div className="text-xs font-semibold uppercase tracking-widest text-stone-500 mb-2 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5"/>Email log</div>
@@ -1473,8 +1666,8 @@ function AutomationRules({rules,setRules}){
   return (<div className="max-w-2xl space-y-3">
     <p className="text-sm text-stone-500">Rules run automatically on imported orders and in Batch — auto-pick services, force signature, flag oversize, and more.</p>
     {rules.map(r=>(<div key={r.id} className="border border-stone-200 rounded-lg bg-white p-3 flex items-center gap-3">
-      <button onClick={()=>setRules(rs=>rs.map(x=>x.id===r.id?{...x,enabled:!x.enabled}:x))}><span className={`w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${r.enabled?"bg-blue-600 justify-end":"bg-stone-300 justify-start"}`}><span className="w-4 h-4 bg-white rounded-full"/></span></button>
-      <div className="flex-1"><div className="font-medium text-sm flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-blue-600"/>{r.name}</div><div className="text-[11px] text-stone-400 font-mono">{labelFor(r)}</div></div>
+      <button onClick={()=>setRules(rs=>rs.map(x=>x.id===r.id?{...x,enabled:!x.enabled}:x))}><span className={`w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${r.enabled?"bg-sky-600 justify-end":"bg-stone-300 justify-start"}`}><span className="w-4 h-4 bg-white rounded-full"/></span></button>
+      <div className="flex-1"><div className="font-medium text-sm flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-sky-600"/>{r.name}</div><div className="text-[11px] text-stone-400 font-mono">{labelFor(r)}</div></div>
       <button onClick={()=>setRules(rs=>rs.filter(x=>x.id!==r.id))} className="text-stone-300 hover:text-rose-500"><Trash2 className="w-4 h-4"/></button>
     </div>))}
     <Panel title="New rule">
@@ -1526,7 +1719,7 @@ function AddressBook({settings,setSettings}){
     </div>
     {msg&&<div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg px-3 py-2 text-sm flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/>{msg}</div>}
     <div className="text-[11px] text-stone-400">CSV columns recognized: name, company, address, city, state, zip, phone (header row optional).</div>
-    <div className="relative"><Search className="w-4 h-4 absolute left-3 top-2.5 text-stone-400"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search address book" className="w-full bg-white border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm outline-none focus:border-blue-500"/></div>
+    <div className="relative"><Search className="w-4 h-4 absolute left-3 top-2.5 text-stone-400"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search address book" className="w-full bg-white border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm outline-none focus:border-sky-500"/></div>
     <Panel title="Add address">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2"><Field label="Name"><Input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field><Field label="Company"><Input value={f.company} onChange={e=>setF({...f,company:e.target.value})}/></Field><Field label="Phone"><Input value={f.phone} onChange={e=>setF({...f,phone:e.target.value})}/></Field><div className="col-span-2 sm:col-span-3"><Field label="Street"><Input value={f.address1} onChange={e=>setF({...f,address1:e.target.value})}/></Field></div><Field label="City"><Input value={f.city} onChange={e=>setF({...f,city:e.target.value})}/></Field><Field label="State"><Input value={f.state} onChange={e=>setF({...f,state:e.target.value})}/></Field><Field label="ZIP"><Input value={f.zip} onChange={e=>setF({...f,zip:e.target.value})}/></Field></div>
       <button onClick={add} className="text-sm bg-stone-900 text-white rounded px-4 py-2 font-medium">Save address</button>
@@ -1563,14 +1756,14 @@ function Billing({settings,setSettings}){
     <Panel title="Prepaid balance">
       <div className="flex items-end justify-between">
         <div><div className="text-[11px] uppercase tracking-widest text-stone-400">Available funds</div><div className="text-3xl font-semibold text-stone-900 font-mono">{money(prepaid.balance||0)}</div></div>
-        <Wallet className="w-8 h-8 text-blue-500"/>
+        <Wallet className="w-8 h-8 text-sky-500"/>
       </div>
       <p className="text-[12px] text-stone-400">Prepaid funds cover label purchases and prepaid carrier products. Top up here; each label drawn against this balance shows in the ledger.</p>
       <div className="flex items-end gap-2">
-        <div className="flex-1"><div className="text-[10px] uppercase tracking-widest text-stone-500 mb-1">Add amount ($)</div><div className="flex gap-1.5">{[50,100,250,500].map(v=><button key={v} onClick={()=>setAmt(String(v))} className={`text-sm rounded px-2.5 py-1.5 border ${String(v)===amt?"bg-blue-50 border-blue-300 text-blue-700":"bg-white border-stone-200 text-stone-600 hover:bg-stone-50"}`}>${v}</button>)}<Input type="number" value={amt} onChange={e=>setAmt(e.target.value)} className="w-24"/></div></div>
+        <div className="flex-1"><div className="text-[10px] uppercase tracking-widest text-stone-500 mb-1">Add amount ($)</div><div className="flex gap-1.5">{[50,100,250,500].map(v=><button key={v} onClick={()=>setAmt(String(v))} className={`text-sm rounded px-2.5 py-1.5 border ${String(v)===amt?"bg-sky-50 border-sky-300 text-sky-700":"bg-white border-stone-200 text-stone-600 hover:bg-stone-50"}`}>${v}</button>)}<Input type="number" value={amt} onChange={e=>setAmt(e.target.value)} className="w-24"/></div></div>
         <button onClick={addFunds} className={`text-sm rounded px-4 py-2 font-medium flex items-center gap-1.5 ${added?"bg-emerald-600 text-white":"bg-stone-900 text-white hover:bg-stone-800"}`}>{added?<><Check className="w-4 h-4"/>Added</>:<><Plus className="w-4 h-4"/>Add funds</>}</button>
       </div>
-      <label className="flex items-center gap-2 text-sm text-stone-600 pt-1"><input type="checkbox" checked={prepaid.autoRecharge} onChange={e=>setPrepaid({autoRecharge:e.target.checked})} className="accent-blue-600"/>Auto-recharge when balance is low</label>
+      <label className="flex items-center gap-2 text-sm text-stone-600 pt-1"><input type="checkbox" checked={prepaid.autoRecharge} onChange={e=>setPrepaid({autoRecharge:e.target.checked})} className="accent-sky-600"/>Auto-recharge when balance is low</label>
       {prepaid.autoRecharge&&<div className="grid grid-cols-2 gap-2 pl-6">
         <Field label="When balance drops below $"><Input type="number" value={prepaid.rechargeAt} onChange={e=>setPrepaid({rechargeAt:+e.target.value})}/></Field>
         <Field label="Recharge by $"><Input type="number" value={prepaid.rechargeAmount} onChange={e=>setPrepaid({rechargeAmount:+e.target.value})}/></Field>
@@ -1642,7 +1835,7 @@ function CarrierAccounts({accounts,setAccounts,settings,setSettings}){
         <p className="text-[11px] text-stone-400 -mt-1">The Integration ID enables real label printing. In Webship: gear/settings → eCommerce Integrations → Add → Rest API → Save New Integration → copy the ID. Turn on auto-ship for that integration so labels book automatically.</p>
         <div className="flex flex-wrap items-center gap-3">
           <button onClick={runTest} disabled={!eng.apiKey||!eng.customerId} className="text-sm bg-stone-900 text-white rounded px-4 py-2 font-medium hover:bg-stone-800 disabled:opacity-40 flex items-center gap-1.5">{test&&test.loading?<><Loader2 className="w-4 h-4 animate-spin"/>Testing…</>:<><ShieldCheck className="w-4 h-4"/>Test connection</>}</button>
-          {test&&!test.loading&&<span className={`text-xs flex items-center gap-1.5 ${test.ok?"text-emerald-700":"text-blue-600"}`}>{test.ok?<CheckCircle2 className="w-4 h-4"/>:<AlertTriangle className="w-4 h-4"/>}{test.msg}</span>}
+          {test&&!test.loading&&<span className={`text-xs flex items-center gap-1.5 ${test.ok?"text-emerald-700":"text-sky-600"}`}>{test.ok?<CheckCircle2 className="w-4 h-4"/>:<AlertTriangle className="w-4 h-4"/>}{test.msg}</span>}
         </div>
         {test&&!test.loading&&!test.ok&&test.detail&&<div className="text-[11px] text-stone-500 font-mono bg-stone-100 border border-stone-200 rounded p-2 break-words whitespace-pre-wrap">England said: {typeof test.detail==="string"?test.detail:JSON.stringify(test.detail)}</div>}
         <p className="text-[11px] text-stone-400">For production, store the API key as a Netlify env var (<span className="font-mono">ENGLAND_API_KEY</span>, <span className="font-mono">ENGLAND_CUSTOMER_ID</span>) instead of here, so it never ships to the browser. England authenticates with the API key + customer ID; if you only have the FedEx account number, try it as the customer ID or confirm the key with your England rep.</p>
@@ -1657,7 +1850,7 @@ function CarrierAccounts({accounts,setAccounts,settings,setSettings}){
             <div className={`w-12 text-xs font-bold ${c.tint}`}>{c.name}</div>
             <div className="flex-1 min-w-0"><div className="text-sm font-medium">{c.blurb}</div><div className="text-[11px] text-stone-400">ShippingCloud account · instant</div></div>
             {plat[c.id]&&<Badge tone="green">on</Badge>}
-            <button onClick={()=>togglePlat(c.id)}><span className={`w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${plat[c.id]?"bg-blue-600 justify-end":"bg-stone-300 justify-start"}`}><span className="w-4 h-4 bg-white rounded-full"/></span></button>
+            <button onClick={()=>togglePlat(c.id)}><span className={`w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${plat[c.id]?"bg-sky-600 justify-end":"bg-stone-300 justify-start"}`}><span className="w-4 h-4 bg-white rounded-full"/></span></button>
           </div>
         ))}
       </div>
@@ -1674,7 +1867,7 @@ function CarrierAccounts({accounts,setAccounts,settings,setSettings}){
         <button onClick={add} className="text-sm bg-stone-900 text-white rounded px-4 py-2 font-medium">Connect</button>
       </Panel>}
       <div className="space-y-2 mt-2">{accounts.map(a=>(<div key={a.id} className="border border-stone-200 rounded-lg bg-white p-4 flex items-center gap-3">
-        <div className="w-9 h-9 rounded bg-blue-50 text-blue-600 flex items-center justify-center"><Wifi className="w-4 h-4"/></div>
+        <div className="w-9 h-9 rounded bg-sky-50 text-sky-600 flex items-center justify-center"><Wifi className="w-4 h-4"/></div>
         <div className="flex-1"><div className="font-medium">{a.label||a.provider}</div><div className="text-[11px] text-stone-400 font-mono">{(PROVIDERS.find(p=>p.id===a.provider)||{}).name}{a.account?` · ${a.account}`:""}</div></div>
         <Badge tone="amber">{a.mode}</Badge>
         <button onClick={()=>setAccounts(x=>x.filter(y=>y.id!==a.id))} className="text-stone-300 hover:text-rose-500"><Trash2 className="w-4 h-4"/></button>
@@ -1691,11 +1884,11 @@ function Subscription({settings,setSettings}){
     <p className="text-sm text-stone-500">Your ShippingCloud plan. Upgrade to unlock more volume, integrations, and tools. Downgrade anytime.</p>
     <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
       {PLANS.map(p=>{const active=p.id===current;const isUp=order.indexOf(p.id)>order.indexOf(current);return (
-        <div key={p.id} className={`rounded-xl border p-4 flex flex-col ${active?"border-blue-500 bg-blue-50/40 ring-1 ring-blue-200":"border-stone-200 bg-white"}`}>
+        <div key={p.id} className={`rounded-xl border p-4 flex flex-col ${active?"border-sky-500 bg-sky-50/40 ring-1 ring-sky-200":"border-stone-200 bg-white"}`}>
           <div className="flex items-center justify-between"><div className="font-bold text-stone-900">{p.name}</div>{active&&<Badge tone="blue">current</Badge>}</div>
           <div className="text-[11px] text-stone-400 mb-2">{p.tagline}</div>
           <div className="text-2xl font-bold">{p.price===0?"Free":<>${p.price}<span className="text-sm font-normal text-stone-400">/mo</span></>}</div>
-          <div className="text-[11px] text-blue-600 font-medium mb-3">{p.limits}</div>
+          <div className="text-[11px] text-sky-600 font-medium mb-3">{p.limits}</div>
           <ul className="space-y-1.5 flex-1">{p.features.map(f=>(<li key={f} className="flex items-start gap-1.5 text-[12px] text-stone-600"><Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5"/>{f}</li>))}</ul>
           <button onClick={()=>setSettings({...settings,plan:p.id})} disabled={active} className={`mt-3 text-sm rounded px-3 py-2 font-medium ${active?"bg-stone-100 text-stone-400":isUp?"bg-stone-900 text-white hover:bg-stone-800":"bg-stone-200 text-stone-700 hover:bg-stone-300"}`}>{active?"Current plan":isUp?"Upgrade":"Switch"}</button>
         </div>
@@ -1733,7 +1926,7 @@ function Invoices({invoices,setInvoices,shipments,client}){
   return (<div className="max-w-3xl space-y-4">
     <div className="grid grid-cols-3 gap-3">
       <Stat2 label="Invoices" v={invoices.length}/>
-      <Stat2 label="Open balance" v={money(open)} tone={open?"text-blue-600":""}/>
+      <Stat2 label="Open balance" v={money(open)} tone={open?"text-sky-600":""}/>
       <Stat2 label="Billed all-time" v={money(invoices.reduce((a,i)=>a+i.amount,0))}/>
     </div>
     <div className="flex flex-wrap items-center gap-3">
@@ -1751,7 +1944,7 @@ function Invoices({invoices,setInvoices,shipments,client}){
         <div className="w-16 text-right font-mono text-sm text-stone-500">{i.labels}</div>
         <div className="w-24 text-right font-mono text-sm font-semibold">{money(i.amount)}</div>
         <div className="w-20 text-right"><Badge tone={i.status==="Paid"?"green":"amber"}>{i.status}</Badge></div>
-        <div className="w-16 text-right">{i.status==="Open"&&<button onClick={()=>markPaid(i.id)} className="text-xs text-blue-600 hover:underline">Mark paid</button>}</div>
+        <div className="w-16 text-right">{i.status==="Open"&&<button onClick={()=>markPaid(i.id)} className="text-xs text-sky-600 hover:underline">Mark paid</button>}</div>
       </div>))}
     </div>
   </div>);
@@ -1769,8 +1962,8 @@ function Ledger({ledger,addLedger}){
   return (<div className="max-w-3xl space-y-4">
     <div className="grid sm:grid-cols-3 gap-3">
       <div className="border border-stone-200 rounded-xl bg-white p-4 sm:col-span-1"><div className="text-[11px] uppercase tracking-widest text-stone-400">Account balance</div><div className={`text-3xl font-bold mt-1 ${balance<0?"text-rose-600":"text-stone-900"}`}>{money(balance)}</div></div>
-      <div className="border border-stone-200 rounded-xl bg-white p-4"><div className="text-[11px] uppercase tracking-widest text-stone-400 mb-1">Add funds</div><div className="flex gap-2"><div className="relative flex-1"><DollarSign className="w-4 h-4 absolute left-2 top-2.5 text-stone-400"/><input type="number" value={funds} onChange={e=>setFunds(e.target.value)} placeholder="100.00" className="w-full bg-white border border-stone-200 rounded pl-7 pr-2 py-2 text-sm font-mono outline-none focus:border-blue-500"/></div><button onClick={addFunds} className="text-sm bg-stone-900 text-white rounded px-3 py-2 font-medium hover:bg-stone-800">Add</button></div></div>
-      <div className="border border-stone-200 rounded-xl bg-white p-4"><div className="text-[11px] uppercase tracking-widest text-stone-400 mb-1">Adjustment</div><div className="flex gap-2"><input type="number" value={adj.amount} onChange={e=>setAdj({...adj,amount:e.target.value})} placeholder="±0.00" className="w-20 bg-white border border-stone-200 rounded px-2 py-2 text-sm font-mono outline-none focus:border-blue-500"/><input value={adj.note} onChange={e=>setAdj({...adj,note:e.target.value})} placeholder="note" className="flex-1 min-w-0 bg-white border border-stone-200 rounded px-2 py-2 text-sm outline-none focus:border-blue-500"/><button onClick={addAdj} className="text-sm bg-stone-200 text-stone-700 rounded px-3 py-2 font-medium hover:bg-stone-300">Post</button></div></div>
+      <div className="border border-stone-200 rounded-xl bg-white p-4"><div className="text-[11px] uppercase tracking-widest text-stone-400 mb-1">Add funds</div><div className="flex gap-2"><div className="relative flex-1"><DollarSign className="w-4 h-4 absolute left-2 top-2.5 text-stone-400"/><input type="number" value={funds} onChange={e=>setFunds(e.target.value)} placeholder="100.00" className="w-full bg-white border border-stone-200 rounded pl-7 pr-2 py-2 text-sm font-mono outline-none focus:border-sky-500"/></div><button onClick={addFunds} className="text-sm bg-stone-900 text-white rounded px-3 py-2 font-medium hover:bg-stone-800">Add</button></div></div>
+      <div className="border border-stone-200 rounded-xl bg-white p-4"><div className="text-[11px] uppercase tracking-widest text-stone-400 mb-1">Adjustment</div><div className="flex gap-2"><input type="number" value={adj.amount} onChange={e=>setAdj({...adj,amount:e.target.value})} placeholder="±0.00" className="w-20 bg-white border border-stone-200 rounded px-2 py-2 text-sm font-mono outline-none focus:border-sky-500"/><input value={adj.note} onChange={e=>setAdj({...adj,note:e.target.value})} placeholder="note" className="flex-1 min-w-0 bg-white border border-stone-200 rounded px-2 py-2 text-sm outline-none focus:border-sky-500"/><button onClick={addAdj} className="text-sm bg-stone-200 text-stone-700 rounded px-3 py-2 font-medium hover:bg-stone-300">Post</button></div></div>
     </div>
     <div className="border border-stone-200 rounded-lg bg-white divide-y divide-stone-100">
       <div className="flex items-center gap-3 px-4 py-2 bg-stone-50 text-[11px] uppercase tracking-widest text-stone-400"><div className="w-24">Date</div><div className="w-36">Type</div><div className="flex-1">Reference</div><div className="w-24 text-right">Amount</div><div className="w-24 text-right">Balance</div></div>
@@ -1790,7 +1983,7 @@ function Ledger({ledger,addLedger}){
 function Clients({clients,setClients}){
   const set=(id,v)=>setClients(cs=>cs.map(c=>c.id===id?{...c,markup:Math.max(0,v)}:c));
   return (<div className="space-y-3 max-w-2xl"><p className="text-sm text-stone-500">Markup is your cut on every label this client ships. Customers never see it.</p>
-    {clients.map(c=>(<div key={c.id} className="border border-stone-200 rounded-lg bg-white p-4 flex items-center gap-4"><div className="w-9 h-9 rounded bg-stone-100 flex items-center justify-center text-blue-600 font-semibold">{c.name[0]}</div><div className="flex-1"><div className="font-medium">{c.name}</div><div className="text-[11px] text-stone-400 font-mono">origin {c.origin}</div></div><button onClick={()=>set(c.id,c.markup-1)} className="w-7 h-7 rounded bg-stone-200 hover:bg-stone-300">–</button><div className="w-14 text-center font-mono text-blue-600 font-semibold">{c.markup}%</div><button onClick={()=>set(c.id,c.markup+1)} className="w-7 h-7 rounded bg-stone-200 hover:bg-stone-300">+</button></div>))}
+    {clients.map(c=>(<div key={c.id} className="border border-stone-200 rounded-lg bg-white p-4 flex items-center gap-4"><div className="w-9 h-9 rounded bg-stone-100 flex items-center justify-center text-sky-600 font-semibold">{c.name[0]}</div><div className="flex-1"><div className="font-medium">{c.name}</div><div className="text-[11px] text-stone-400 font-mono">origin {c.origin}</div></div><button onClick={()=>set(c.id,c.markup-1)} className="w-7 h-7 rounded bg-stone-200 hover:bg-stone-300">–</button><div className="w-14 text-center font-mono text-sky-600 font-semibold">{c.markup}%</div><button onClick={()=>set(c.id,c.markup+1)} className="w-7 h-7 rounded bg-stone-200 hover:bg-stone-300">+</button></div>))}
   </div>);
 }
 
@@ -1803,8 +1996,8 @@ function AddressCard({title,data,set,required,residential,setResidential,address
   const pick=(a)=>{set({...data,name:a.name||"",company:a.company||"",address1:a.address1||"",city:a.city||"",state:a.state||"",zip:a.zip||"",phone:a.phone||"",email:a.email||data.email||""});setQ("");setOpen(false);};
   // cell() is a plain render helper (NOT a component) so inputs never remount → focus is kept while typing
   const cell=(label,k,span,req)=>(
-    <div key={k} className={`px-2 py-1.5 ${req&&!data[k]?"bg-blue-50":"bg-white"} ${span||""}`}>
-      <div className={`text-[9px] uppercase tracking-wide ${req&&!data[k]?"text-blue-600":"text-stone-400"}`}>{label}</div>
+    <div key={k} className={`px-2 py-1.5 ${req&&!data[k]?"bg-sky-50":"bg-white"} ${span||""}`}>
+      <div className={`text-[9px] uppercase tracking-wide ${req&&!data[k]?"text-sky-600":"text-stone-400"}`}>{label}</div>
       {k==="country"
         ? <select value={data.country||"United States"} onChange={e=>f("country",e.target.value)} className="w-full bg-transparent text-[13px] text-stone-900 outline-none mt-0.5">{COUNTRIES.map(c=><option key={c}>{c}</option>)}</select>
         : <input value={data[k]||""} onChange={e=>f(k,e.target.value)} className="w-full bg-transparent text-[13px] text-stone-900 outline-none mt-0.5 placeholder-stone-300"/>}
@@ -1812,15 +2005,15 @@ function AddressCard({title,data,set,required,residential,setResidential,address
   );
   return (<div className="relative">
     <div className="flex items-center justify-between mb-1.5">
-      <span className="text-blue-600 font-semibold text-sm">{title}</span>
-      {setResidential&&<label className="flex items-center gap-1.5 text-[11px] cursor-pointer"><input type="checkbox" checked={residential} onChange={e=>setResidential(e.target.checked)} className="accent-blue-600"/>{residential?<span className="flex items-center gap-1 text-blue-700"><Home className="w-3.5 h-3.5"/>Residential</span>:<span className="flex items-center gap-1 text-stone-600"><Building2 className="w-3.5 h-3.5"/>Commercial</span>}</label>}
+      <span className="text-sky-600 font-semibold text-sm">{title}</span>
+      {setResidential&&<label className="flex items-center gap-1.5 text-[11px] cursor-pointer"><input type="checkbox" checked={residential} onChange={e=>setResidential(e.target.checked)} className="accent-sky-600"/>{residential?<span className="flex items-center gap-1 text-sky-700"><Home className="w-3.5 h-3.5"/>Residential</span>:<span className="flex items-center gap-1 text-stone-600"><Building2 className="w-3.5 h-3.5"/>Commercial</span>}</label>}
     </div>
     {addresses&&addresses.length>0&&(
       <div className="relative mb-1.5">
         <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400"/>
-        <input value={q} onChange={e=>{setQ(e.target.value);setOpen(true);}} onFocus={()=>setOpen(true)} onBlur={()=>setTimeout(()=>setOpen(false),150)} placeholder="Quick-fill from address book…" className="w-full bg-white border border-stone-200 rounded pl-8 pr-2 py-1.5 text-[13px] outline-none focus:border-blue-500 placeholder-stone-300"/>
+        <input value={q} onChange={e=>{setQ(e.target.value);setOpen(true);}} onFocus={()=>setOpen(true)} onBlur={()=>setTimeout(()=>setOpen(false),150)} placeholder="Quick-fill from address book…" className="w-full bg-white border border-stone-200 rounded pl-8 pr-2 py-1.5 text-[13px] outline-none focus:border-sky-500 placeholder-stone-300"/>
         {open&&matches.length>0&&<div className="absolute z-30 left-0 right-0 top-full mt-1 bg-white border border-stone-200 rounded-lg shadow-lg max-h-56 overflow-auto divide-y divide-stone-100">
-          {matches.map(a=><button key={a.id} onMouseDown={()=>pick(a)} className="w-full text-left px-3 py-2 hover:bg-blue-50"><div className="text-sm font-medium text-stone-800">{a.name}{a.company?` · ${a.company}`:""}</div><div className="text-[11px] text-stone-400">{a.address1}{a.address1?", ":""}{a.city} {a.state} {a.zip}</div></button>)}
+          {matches.map(a=><button key={a.id} onMouseDown={()=>pick(a)} className="w-full text-left px-3 py-2 hover:bg-sky-50"><div className="text-sm font-medium text-stone-800">{a.name}{a.company?` · ${a.company}`:""}</div><div className="text-[11px] text-stone-400">{a.address1}{a.address1?", ":""}{a.city} {a.state} {a.zip}</div></button>)}
         </div>}
       </div>
     )}
@@ -1829,13 +2022,13 @@ function AddressCard({title,data,set,required,residential,setResidential,address
     </div>
   </div>);
 }
-function PkgInput({label,w,...p}){return <div><div className="text-[10px] uppercase tracking-widest text-stone-500">{label}</div><input {...p} type="number" className={`${w||"w-14"} bg-white border border-stone-300 rounded px-2 py-1 text-sm font-mono text-stone-900 outline-none focus:border-blue-500`}/></div>;}
+function PkgInput({label,w,...p}){return <div><div className="text-[10px] uppercase tracking-widest text-stone-500">{label}</div><input {...p} type="number" className={`${w||"w-14"} bg-white border border-stone-300 rounded px-2 py-1 text-sm font-mono text-stone-900 outline-none focus:border-sky-500`}/></div>;}
 function Panel({title,children}){return <div className="border border-stone-200 rounded-lg bg-white p-4 space-y-3"><div className="text-[11px] uppercase tracking-widest text-stone-400">{title}</div>{children}</div>;}
 function Field({label,children}){return <label className="block space-y-1"><span className="text-[11px] text-stone-500">{label}</span>{children}</label>;}
-function Input({className="",...p}){return <input {...p} className={`w-full bg-white border border-stone-200 rounded px-2.5 py-2 text-sm font-mono text-stone-900 focus:border-blue-500 outline-none ${className}`}/>;}
-function Select({children,...p}){return <select {...p} className="w-full bg-white border border-stone-200 rounded px-2.5 py-2 text-sm focus:border-blue-500 outline-none">{children}</select>;}
-function Toggle({on,set,label}){return <button onClick={()=>set(!on)} className={`flex items-center gap-1.5 text-xs rounded px-2.5 py-1.5 border ${on?"bg-blue-50 border-blue-200 text-blue-600":"bg-white border-stone-200 text-stone-400"}`}><span className={`w-2 h-2 rounded-full ${on?"bg-blue-600":"bg-stone-300"}`}/>{label}</button>;}
+function Input({className="",...p}){return <input {...p} className={`w-full bg-white border border-stone-200 rounded px-2.5 py-2 text-sm font-mono text-stone-900 focus:border-sky-500 outline-none ${className}`}/>;}
+function Select({children,...p}){return <select {...p} className="w-full bg-white border border-stone-200 rounded px-2.5 py-2 text-sm focus:border-sky-500 outline-none">{children}</select>;}
+function Toggle({on,set,label}){return <button onClick={()=>set(!on)} className={`flex items-center gap-1.5 text-xs rounded px-2.5 py-1.5 border ${on?"bg-sky-50 border-sky-200 text-sky-600":"bg-white border-stone-200 text-stone-400"}`}><span className={`w-2 h-2 rounded-full ${on?"bg-sky-600":"bg-stone-300"}`}/>{label}</button>;}
 function Badge({children,tone="stone"}){const t={stone:"bg-stone-100 text-stone-500 border-stone-200",green:"bg-emerald-50 text-emerald-700 border-emerald-200",amber:"bg-amber-50 text-amber-700 border-amber-200",blue:"bg-sky-50 text-sky-700 border-sky-200",rose:"bg-rose-50 text-rose-600 border-rose-200"}[tone];return <span className={`text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5 border ${t}`}>{children}</span>;}
 function Empty({icon:Icon,title,body}){return <div className="border border-dashed border-stone-300 rounded-lg p-12 text-center"><Icon className="w-8 h-8 text-stone-300 mx-auto mb-3"/><div className="text-stone-700 font-medium">{title}</div><div className="text-sm text-stone-400 mt-1 max-w-sm mx-auto">{body}</div></div>;}
-function EditField({label,v,on}){return <label className="block"><span className="text-[10px] uppercase tracking-wide text-stone-400">{label}</span><input value={v} onChange={e=>on(e.target.value)} className="w-full bg-white border border-stone-200 rounded px-2 py-1 text-sm mt-0.5 outline-none focus:border-blue-500"/></label>;}
+function EditField({label,v,on}){return <label className="block"><span className="text-[10px] uppercase tracking-wide text-stone-400">{label}</span><input value={v} onChange={e=>on(e.target.value)} className="w-full bg-white border border-stone-200 rounded px-2 py-1 text-sm mt-0.5 outline-none focus:border-sky-500"/></label>;}
 function Info({k,v}){return <div className="flex justify-between gap-4 py-0.5 border-b border-stone-100"><span className="text-stone-400">{k}</span><span className="text-stone-800 text-right">{v}</span></div>;}
