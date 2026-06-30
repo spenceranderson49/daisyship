@@ -79,7 +79,7 @@ async function transit(c, body, tk) {
     const deliveryDate = fmtDate(dd.dayCxsFormat || dd.date || op.deliveryDate || op.commitDate || commit.commitTimestamp);
     return { serviceType: s.serviceType, serviceName: s.serviceName || s.serviceType, transitDays: days, transitLabel: transitEnum ? String(transitEnum).replace(/_/g, " ").toLowerCase() : null, deliveryDate, deliveryDay: dd.dayOfWeek || op.deliveryDay || null };
   }).filter((x) => x.serviceType);
-  return { ok: true, _fn: "addr-v11", services, _sample: details[0] || null };
+  return { ok: true, _fn: "addr-v12", services, _sample: details[0] || null };
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -126,13 +126,8 @@ async function rateClassify(c, a, fromZip, tk) {
     }
     return { groundType, residentialSurcharge, services, surcharges };
   };
-  // full street address first (most accurate), then postal-only fallback if FedEx rejects it
-  let p = await probe({ streetLines: [a.address1].filter(Boolean).map(S), city: S(a.city), stateOrProvinceCode: S(a.state), postalCode: S(a.zip), countryCode: a.country || "US" });
-  if (p.error || !p.groundType) {
-    const p2 = await probe({ postalCode: S(a.zip), countryCode: a.country || "US" });
-    if (!p2.error && p2.groundType) p = p2;
-    else if (p.error && !p2.error) p = p2;
-  }
+  // single full-address probe (kept to one rate call so the function stays well under Netlify's 10s limit)
+  const p = await probe({ streetLines: [a.address1].filter(Boolean).map(S), city: S(a.city), stateOrProvinceCode: S(a.state), postalCode: S(a.zip), countryCode: a.country || "US" });
   // Residential surcharge is the most reliable signal; commercial ground product = business.
   let classification = "UNKNOWN";
   if (p.residentialSurcharge) classification = "RESIDENTIAL";
@@ -181,7 +176,7 @@ async function address(c, body, tk) {
   const classification = (vc === "BUSINESS" || vc === "RESIDENTIAL") ? vc : cls.classification;
   return {
     ok: true,
-    _fn: "addr-v11",
+    _fn: "addr-v12",
     deliverable: val.deliverable,                       // true / false / null(=couldn't check)
     classification,                                     // RESIDENTIAL | BUSINESS | UNKNOWN
     residential: classification === "RESIDENTIAL",
