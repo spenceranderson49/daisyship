@@ -204,6 +204,59 @@ async function address(c, body, tk) {
   };
 }
 
+/* ════════ FEDEX PICKUP API ════════ */
+async function pickupAvailability(c, body, tk) {
+  const a = body.address || {};
+  const payload = {
+    associatedAccountNumber: { value: c.account },
+    pickupAddress: { streetLines: [a.address1].filter(Boolean).map(S), city: S(a.city), stateOrProvinceCode: S(a.state), postalCode: S(a.zip), countryCode: CC(a.country) },
+    pickupRequestType: ["SAME_DAY", "FUTURE_DAY"],
+    dispatchDate: body.date || new Date().toISOString().slice(0, 10),
+    packageReadyTime: body.readyTime || "10:00:00",
+    customerCloseTime: body.closeTime || "17:00:00",
+    carriers: [body.carrierCode || "FDXE"],
+    countryRelationship: "DOMESTIC",
+  };
+  let r, t, d = null;
+  try {
+    r = await fetch(c.base + "/pickup/v1/pickups/availabilities", { method: "POST", headers: { "Authorization": "Bearer " + tk, "Content-Type": "application/json", "X-locale": "en_US" }, body: JSON.stringify(payload) });
+    t = await r.text(); try { d = JSON.parse(t); } catch {}
+  } catch (e) { return { ok: false, error: "availability fetch failed: " + (e && e.message) }; }
+  if (!r.ok) return { ok: false, error: "availability HTTP " + r.status + (d && d.errors && d.errors[0] ? ": " + d.errors[0].message : "") };
+  const o = (d && d.output) || {};
+  return { ok: true, options: o.options || [], closeTimes: o.closeTimeDetails || [] };
+}
+
+async function schedulePickup(c, body, tk) {
+  const a = body.address || {};
+  const payload = {
+    associatedAccountNumber: { value: c.account },
+    originDetail: {
+      pickupLocation: {
+        contact: { personName: S(a.name) || "Shipping Dept", phoneNumber: S(a.phone) || "0000000000", companyName: S(a.company) || S(a.name) || "Shipper" },
+        address: { streetLines: [a.address1, a.address2].filter(Boolean).map(S), city: S(a.city), stateOrProvinceCode: S(a.state), postalCode: S(a.zip), countryCode: CC(a.country), residential: !!body.residential },
+      },
+      readyDateTimestamp: (body.date || new Date().toISOString().slice(0, 10)) + "T" + (body.readyTime || "10:00:00"),
+      customerCloseTime: body.closeTime || "17:00:00",
+      packageLocation: body.packageLocation || "FRONT",
+      buildingPart: body.buildingPart || "SUITE",
+    },
+    totalWeight: { units: "LB", value: Number(body.totalWeight) || 1 },
+    packageCount: Number(body.packageCount) || 1,
+    carrierCode: body.carrierCode || "FDXE",
+    remarks: body.remarks || "",
+    countryRelationship: "DOMESTIC",
+  };
+  let r, t, d = null;
+  try {
+    r = await fetch(c.base + "/pickup/v1/pickups", { method: "POST", headers: { "Authorization": "Bearer " + tk, "Content-Type": "application/json", "X-locale": "en_US" }, body: JSON.stringify(payload) });
+    t = await r.text(); try { d = JSON.parse(t); } catch {}
+  } catch (e) { return { ok: false, error: "pickup fetch failed: " + (e && e.message) }; }
+  if (!r.ok) return { ok: false, error: "pickup HTTP " + r.status + (d && d.errors && d.errors[0] ? ": " + (d.errors[0].message || JSON.stringify(d.errors)) : (t ? ": " + t.slice(0, 200) : "")) };
+  const o = (d && d.output) || {};
+  return { ok: true, confirmationCode: o.pickupConfirmationCode || o.confirmationNumber || null, location: o.location || null, message: o.message || null };
+}
+
 exports.handler = async (event) => {
   try {
     if (event.httpMethod === "OPTIONS") return { statusCode: 204, body: "" };
@@ -218,6 +271,16 @@ exports.handler = async (event) => {
 
     if (body.action === "address") {
       const out = await address(c, body, tk);
+      return J(out);
+    }
+    if (body.action === "pickup") {
+      if (!c.account) return J({ ok: false, error: "Missing FedEx account number." });
+      const out = await schedulePickup(c, body, tk);
+      return J(out);
+    }
+    if (body.action === "pickupAvailability") {
+      if (!c.account) return J({ ok: false, error: "Missing FedEx account number." });
+      const out = await pickupAvailability(c, body, tk);
       return J(out);
     }
     // default: transit
