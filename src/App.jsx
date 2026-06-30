@@ -9,7 +9,7 @@ const FW_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfIAAAAsCAYAAACe0jo
 
 
 const DEFAULT_BRAND={name1:"Shipping",name2:"Cloud",primary:FW_BLUE,dark:FW_DARK,partnerLabel:"by",logo:FW_LOGO,showLogo:true};
-const BUILD_TAG="addr-v21";
+const BUILD_TAG="addr-v22";
 
 /* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
@@ -785,6 +785,12 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
     },600);
     return ()=>{cancel=true;clearTimeout(t);};
   },[receiver.address1,receiver.zip,receiver.city,receiver.state,verifyNonce]);
+  const normLine=(n)=> n? [Array.isArray(n.streetLines)?n.streetLines.join(" "):n.streetLines,n.city,[n.state,n.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ") : "";
+  const curLine=[receiver.address1,receiver.city,[receiver.state,receiver.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const suggestion=(verify&&verify.normalized&&normLine(verify.normalized))||"";
+  const suggestDiffers=suggestion && suggestion.replace(/\s+/g," ").toUpperCase()!==curLine.replace(/\s+/g," ").toUpperCase();
+  const applySuggestion=()=>{const n=verify&&verify.normalized;if(!n)return;setReceiver(prev=>({...prev,address1:Array.isArray(n.streetLines)?n.streetLines.join(" "):(n.streetLines||prev.address1),city:n.city||prev.city,state:n.state||prev.state,zip:n.zip||prev.zip}));};
+  const setOverride=(on)=>{ setResTouched(on); if(!on) setVerifyNonce(x=>x+1); };  // turning override off re-asks FedEx
 
   const applyOrder=(o)=>{setSelectedOrder(o.id);setReference(o.name);setReceiver({...empty,name:o.customer||"",company:o.company||"",zip:o.zip||"",state:o.state||"",city:o.city||"",address1:o.address1||"",phone:o.phone||"",email:o.email||""});setPieces([{weight:o.weight||1,L:12,W:9,H:4}]);};
   useEffect(()=>{ if(!prefill)return;
@@ -896,15 +902,25 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
           {!verify||verify.loading
             ?<span className="flex items-center gap-1.5 text-stone-400"><Loader2 className="w-3.5 h-3.5 animate-spin"/>Checking address with FedEx…</span>
             :<>
-              {/* residential / commercial — the primary signal */}
-              {verify.type
-                ?<span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border ${verify.type==="Residential"?"text-[#006FBF] bg-[#E6F4FF] border-[#99D6FF]":"text-stone-700 bg-stone-100 border-stone-200"}`} title={"FedEx classifies this as a "+verify.type.toLowerCase()+" address"}>{verify.type==="Residential"?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{verify.type}</span>
-                :<span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border text-stone-400 bg-stone-50 border-stone-200" title="FedEx didn’t return a residential/commercial classification for this address">FedEx returned “{verify.raw||"?"}” · origin {verify.fromZip||"—"}</span>}
-              {/* deliverability */}
-              {verify.deliverable===true&&<span className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 font-medium" title={verify.normalized&&verify.normalized.city?"FedEx confirms a deliverable address — "+(Array.isArray(verify.normalized.streetLines)?verify.normalized.streetLines.join(" "):"")+" "+verify.normalized.city+", "+verify.normalized.state+" "+verify.normalized.zip:"FedEx confirms this is a deliverable address"}><CheckCircle2 className="w-3.5 h-3.5"/>Deliverable</span>}
-              {verify.deliverable===false&&<span className="flex items-center gap-1.5 text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 font-medium" title={verify.issues?verify.issues.join(" · "):"FedEx couldn’t confirm this address"}><AlertTriangle className="w-3.5 h-3.5"/>{verify.issues?verify.issues.join(" · "):"Address not found"}</span>}
-              {verify.deliverable==null&&verify.error&&<span className="flex items-center gap-1.5 text-rose-600 bg-rose-50 border border-rose-200 rounded-full px-2.5 py-1 font-medium" title={verify.error}><AlertTriangle className="w-3.5 h-3.5"/>FedEx: {String(verify.error).slice(0,80)}</span>}
+              {/* residential / commercial */}
+              {resTouched
+                ?<span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border ${residential?"text-[#006FBF] bg-[#E6F4FF] border-[#99D6FF]":"text-stone-700 bg-stone-100 border-stone-200"}`} title="Manually overridden classification">{residential?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{residential?"Residential":"Commercial"} · manual</span>
+                :(verify.type
+                  ?<span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border ${verify.type==="Residential"?"text-[#006FBF] bg-[#E6F4FF] border-[#99D6FF]":"text-stone-700 bg-stone-100 border-stone-200"}`} title={"FedEx classifies this as a "+verify.type.toLowerCase()+" address"}>{verify.type==="Residential"?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{verify.type}</span>
+                  :<span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border text-stone-400 bg-stone-50 border-stone-200" title="FedEx didn’t classify this address — use Override to set it">Type unknown</span>)}
+              {/* verified / not verified */}
+              {verify.deliverable===true&&<span className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 font-medium" title="FedEx verified this is a deliverable address"><CheckCircle2 className="w-3.5 h-3.5"/>Verified</span>}
+              {verify.deliverable===false&&<span className="flex items-center gap-1.5 text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 font-medium" title={verify.issues?verify.issues.join(" · "):"FedEx couldn’t verify this address"}><AlertTriangle className="w-3.5 h-3.5"/>Not verified{verify.issues?" · "+verify.issues.join(" · "):""}</span>}
+              {verify.deliverable==null&&verify.error&&<span className="flex items-center gap-1.5 text-rose-600 bg-rose-50 border border-rose-200 rounded-full px-2.5 py-1 font-medium" title={verify.error}><AlertTriangle className="w-3.5 h-3.5"/>FedEx: {String(verify.error).slice(0,60)}</span>}
+              {/* clickable suggested (FedEx-normalized) address */}
+              {suggestDiffers&&<button onClick={applySuggestion} className="flex items-center gap-1.5 text-[#0086E0] bg-[#E6F4FF] border border-[#99D6FF] rounded-full px-2.5 py-1 font-medium hover:bg-[#CCEAFF]" title="Click to use FedEx’s standardized version of this address"><MapPin className="w-3.5 h-3.5"/>Use: {suggestion}</button>}
             </>}
+          {/* override classification */}
+          <label className="flex items-center gap-1.5 cursor-pointer text-stone-500 ml-1" title="Override FedEx’s residential/commercial classification"><input type="checkbox" checked={resTouched} onChange={e=>setOverride(e.target.checked)} className="accent-[#0086E0]"/>Override</label>
+          {resTouched&&<div className="flex items-center rounded-full border border-stone-200 overflow-hidden">
+            <button onClick={()=>setRes(true)} className={`flex items-center gap-1 px-2.5 py-1 ${residential?"bg-[#E6F4FF] text-[#006FBF] font-medium":"bg-white text-stone-500"}`}><Home className="w-3.5 h-3.5"/>Residential</button>
+            <button onClick={()=>setRes(false)} className={`flex items-center gap-1 px-2.5 py-1 border-l border-stone-200 ${!residential?"bg-stone-100 text-stone-800 font-medium":"bg-white text-stone-500"}`}><Building2 className="w-3.5 h-3.5"/>Commercial</button>
+          </div>}
           {receiver.address1&&/^\d{5}/.test(receiver.zip||"")&&<button onClick={()=>setVerifyNonce(n=>n+1)} className="flex items-center gap-1 text-stone-400 hover:text-[#0086E0] underline ml-1" title="Re-check this address with FedEx"><ShieldCheck className="w-3.5 h-3.5"/>Re-check</button>}
         </div>
 
