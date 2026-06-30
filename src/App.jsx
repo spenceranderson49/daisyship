@@ -9,7 +9,7 @@ const FW_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfIAAAAsCAYAAACe0jo
 
 
 const DEFAULT_BRAND={name1:"Shipping",name2:"Cloud",primary:FW_BLUE,dark:FW_DARK,partnerLabel:"by",logo:FW_LOGO,showLogo:true};
-const BUILD_TAG="addr-v11";
+const BUILD_TAG="addr-v12";
 
 /* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
@@ -158,7 +158,7 @@ async function fedexTransit(s){
   return map;
 }
 async function fedexValidateAddress(addr,fromZip){
-  return await fedexCall({action:"address",fromZip:fromZip||"",address:{address1:addr.address1,address2:addr.address2,city:addr.city,state:addr.state,zip:addr.zip,country:addr.country||"US"}});
+  return await fedexCall({action:"address",fromZip:fromZip||"",address:{address1:addr.address1,address2:addr.address2,city:addr.city,state:addr.state,zip:addr.zip,country:addr.country||"US"}},25000);
 }
 
 /* ════════ SEED ════════ */
@@ -884,7 +884,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
               {/* deliverability */}
               {verify.deliverable===true&&<span className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 font-medium" title={verify.normalized&&verify.normalized.city?"FedEx confirms a deliverable address — "+(Array.isArray(verify.normalized.streetLines)?verify.normalized.streetLines.join(" "):"")+" "+verify.normalized.city+", "+verify.normalized.state+" "+verify.normalized.zip:"FedEx confirms this is a deliverable address"}><CheckCircle2 className="w-3.5 h-3.5"/>Deliverable</span>}
               {verify.deliverable===false&&<span className="flex items-center gap-1.5 text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 font-medium" title={verify.issues?verify.issues.join(" · "):"FedEx couldn’t confirm this address"}><AlertTriangle className="w-3.5 h-3.5"/>{verify.issues?verify.issues.join(" · "):"Address not found"}</span>}
-              {verify.deliverable==null&&verify.error&&<span className="flex items-center gap-1.5 text-stone-400" title={verify.error}><AlertTriangle className="w-3.5 h-3.5"/>FedEx check unavailable</span>}
+              {verify.deliverable==null&&verify.error&&<span className="flex items-center gap-1.5 text-rose-600 bg-rose-50 border border-rose-200 rounded-full px-2.5 py-1 font-medium" title={verify.error}><AlertTriangle className="w-3.5 h-3.5"/>FedEx: {String(verify.error).slice(0,80)}</span>}
             </>}
           {receiver.address1&&/^\d{5}/.test(receiver.zip||"")&&<button onClick={()=>setVerifyNonce(n=>n+1)} className="flex items-center gap-1 text-stone-400 hover:text-[#0086E0] underline ml-1" title="Re-check this address with FedEx"><ShieldCheck className="w-3.5 h-3.5"/>Re-check</button>}
         </div>
