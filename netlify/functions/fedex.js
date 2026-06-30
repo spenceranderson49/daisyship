@@ -85,15 +85,13 @@ async function transit(c, body, tk) {
 // Reliable residential/commercial detection via the Rate API:
 // rate the address with NO residential flag; FedEx returns GROUND_HOME_DELIVERY for residences,
 // FEDEX_GROUND for businesses, and adds a residential surcharge when residential.
-async function classifyByRate(c, body, tk) {
-  const a = body.address || {};
-  if (!body.fromZip || !c.account) return { cls: null, services: [], error: "no fromZip/account" };
+async function rateProbe(c, recipientAddr, tk) {
   const today = new Date().toISOString().slice(0, 10);
   const payload = {
     accountNumber: { value: c.account },
     requestedShipment: {
-      shipper: { address: { postalCode: S(body.fromZip), countryCode: "US" } },
-      recipient: { address: { streetLines: [a.address1].filter(Boolean).map(S), city: S(a.city), stateOrProvinceCode: S(a.state), postalCode: S(a.zip), countryCode: a.country || "US" } },
+      shipper: { address: { postalCode: S(c._fromZip), countryCode: "US" } },
+      recipient: { address: recipientAddr },
       pickupType: "USE_SCHEDULED_PICKUP",
       rateRequestType: ["LIST", "ACCOUNT"],
       shipDateStamp: today,
@@ -104,23 +102,37 @@ async function classifyByRate(c, body, tk) {
   try {
     r = await fetch(c.base + "/rate/v1/rates/quotes", { method: "POST", headers: { "Authorization": "Bearer " + tk, "Content-Type": "application/json", "X-locale": "en_US" }, body: JSON.stringify(payload) });
     text = await r.text(); try { d = JSON.parse(text); } catch {}
-  } catch (e) { return { cls: null, services: [], error: "rate fetch failed: " + (e && e.message) }; }
-  if (!r.ok) return { cls: null, services: [], error: "rate HTTP " + r.status + (d && d.errors ? ": " + (d.errors[0] && d.errors[0].message || JSON.stringify(d.errors)) : (text ? ": " + text.slice(0, 200) : "")) };
+  } catch (e) { return { resi: false, comm: false, services: [], error: "rate fetch failed: " + (e && e.message) }; }
+  if (!r.ok) return { resi: false, comm: false, services: [], error: "rate HTTP " + r.status + (d && d.errors ? ": " + (d.errors[0] && d.errors[0].message || JSON.stringify(d.errors)) : (text ? ": " + text.slice(0, 200) : "")) };
   const details = (d && d.output && d.output.rateReplyDetails) || [];
-  const serviceList = details.map((s) => s.serviceType);
+  const services = details.map((s) => s.serviceType);
   let resi = false, comm = false;
   for (const s of details) {
     const st = String(s.serviceType || "");
     if (st === "GROUND_HOME_DELIVERY") resi = true;
     if (st === "FEDEX_GROUND") comm = true;
     const rsd = (s.ratedShipmentDetails && s.ratedShipmentDetails[0]) || {};
-    const sd = rsd.shipmentRateDetail || {};
-    const surs = sd.surCharges || sd.surcharges || [];
+    const surs = (rsd.shipmentRateDetail && (rsd.shipmentRateDetail.surCharges || rsd.shipmentRateDetail.surcharges)) || [];
     for (const su of surs) { if (/residential/i.test(String(su.type || su.description || ""))) resi = true; }
   }
-  try { console.log("FEDEX classifyByRate services=" + serviceList.join(",") + " resi=" + resi + " comm=" + comm); } catch (e) {}
-  const cls = resi ? "RESIDENTIAL" : (comm ? "BUSINESS" : null);
-  return { cls, services: serviceList, error: null };
+  return { resi, comm, services, error: null };
+}
+
+async function classifyByRate(c, body, tk) {
+  const a = body.address || {};
+  if (!body.fromZip || !c.account) return { cls: null, services: [], error: "no fromZip/account" };
+  c._fromZip = body.fromZip;
+  // 1) probe with the full street address (gives the most accurate residential read)
+  let p = await rateProbe(c, { streetLines: [a.address1].filter(Boolean).map(S), city: S(a.city), stateOrProvinceCode: S(a.state), postalCode: S(a.zip), countryCode: a.country || "US" }, tk);
+  // 2) if FedEx rejected that exact address, fall back to a postal-code-only probe (same shape transit uses, which works)
+  if (p.error || (!p.resi && !p.comm)) {
+    const p2 = await rateProbe(c, { postalCode: S(a.zip), countryCode: a.country || "US" }, tk);
+    if (!p2.error && (p2.resi || p2.comm)) p = p2;
+    else if (p.error && !p2.error) p = p2;
+  }
+  try { console.log("FEDEX classifyByRate services=" + p.services.join(",") + " resi=" + p.resi + " comm=" + p.comm + (p.error ? " err=" + p.error : "")); } catch (e) {}
+  const cls = p.resi ? "RESIDENTIAL" : (p.comm ? "BUSINESS" : null);
+  return { cls, services: p.services, error: p.error };
 }
 
 async function address(c, body, tk) {
