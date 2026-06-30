@@ -9,7 +9,7 @@ const FW_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfIAAAAsCAYAAACe0jo
 
 
 const DEFAULT_BRAND={name1:"Shipping",name2:"Cloud",primary:FW_BLUE,dark:FW_DARK,partnerLabel:"by",logo:FW_LOGO,showLogo:true};
-const BUILD_TAG="addr-v18";
+const BUILD_TAG="addr-v19";
 
 /* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
@@ -763,7 +763,9 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
     let cancel=false;
     setVerify({loading:true});
     const t=setTimeout(async()=>{
-      const res=await fedexValidateAddress(receiver, sender.zip||client.origin);
+      const fromZip=sender.zip||client.origin||(settings.sender&&settings.sender.zip)||"84003";
+      const res=await fedexValidateAddress(receiver, fromZip);
+      try{console.log("[verify] fromZip="+fromZip+" classification="+(res&&res.classification)+" deliverable="+(res&&res.deliverable)+" err="+(res&&res.error||"")+" debug="+JSON.stringify(res&&res.debug||{}));}catch(e){}
       if(cancel)return;
       if(res&&res.ok){
         const cls=res.classification;
