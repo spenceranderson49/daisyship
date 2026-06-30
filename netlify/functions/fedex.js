@@ -47,13 +47,15 @@ async function transit(c, body, tk) {
   const payload = {
     accountNumber: { value: c.account },
     requestedShipment: {
-      shipper: { address: { postalCode: S(body.fromZip), countryCode: body.fromCountry || "US", residential: false } },
+      shipper: { address: { postalCode: S(body.fromZip), countryCode: body.fromCountry || "US", stateOrProvinceCode: S(body.fromState) || undefined } },
       recipient: { address: { postalCode: S(body.toZip), countryCode: body.toCountry || "US", residential: !!body.residential } },
-      pickupType: "DROPOFF_AT_FEDEX_LOCATION",
-      rateRequestType: ["LIST", "ACCOUNT"],
+      pickupType: "USE_SCHEDULED_PICKUP",
       shipDateStamp: body.shipDate || today,
+      rateRequestType: ["LIST", "ACCOUNT"],
       requestedPackageLineItems: (Array.isArray(body.pieces) && body.pieces.length ? body.pieces : [{ weight: body.weight || 1 }]).map((p) => ({ weight: { units: "LB", value: Number(p.weight || p.wt || 1) } })),
     },
+    // ask FedEx for delivery commitments / transit times
+    returnTransitTimes: true,
   };
   const r = await fetch(c.base + "/rate/v1/rates/quotes", {
     method: "POST",
@@ -77,7 +79,7 @@ async function transit(c, body, tk) {
     const deliveryDate = fmtDate(dd.dayCxsFormat || dd.date || op.deliveryDate || op.commitDate || commit.commitTimestamp);
     return { serviceType: s.serviceType, serviceName: s.serviceName || s.serviceType, transitDays: days, transitLabel: transitEnum ? String(transitEnum).replace(/_/g, " ").toLowerCase() : null, deliveryDate, deliveryDay: dd.dayOfWeek || op.deliveryDay || null };
   }).filter((x) => x.serviceType);
-  return { ok: true, services };
+  return { ok: true, services, _sample: details[0] || null };
 }
 
 // Reliable residential/commercial detection via the Rate API:
