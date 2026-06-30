@@ -9,7 +9,7 @@ const FW_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfIAAAAsCAYAAACe0jo
 
 
 const DEFAULT_BRAND={name1:"Shipping",name2:"Cloud",primary:FW_BLUE,dark:FW_DARK,partnerLabel:"by",logo:FW_LOGO,showLogo:true};
-const BUILD_TAG="addr-v20";
+const BUILD_TAG="addr-v21";
 
 /* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
@@ -167,8 +167,15 @@ async function fedexTransit(s){
   for(const sv of res.services){ const k=canonSvc(sv.serviceType); if(!map[k]||(sv.transitDays!=null)) map[k]={days:sv.transitDays,date:sv.deliveryDate,day:sv.deliveryDay,name:sv.serviceName}; }
   return map;
 }
+function countryCode(c){
+  if(!c) return "US";
+  const s=String(c).trim();
+  if(s.length===2) return s.toUpperCase();
+  const m={"united states":"US","united states of america":"US","usa":"US","u.s.a.":"US","u.s.":"US","canada":"CA","mexico":"MX","united kingdom":"GB","great britain":"GB","puerto rico":"PR","australia":"AU","germany":"DE","france":"FR"};
+  return m[s.toLowerCase()]||"US";
+}
 async function fedexValidateAddress(addr,fromZip){
-  return await fedexCall({action:"address",fromZip:fromZip||"",address:{address1:addr.address1,address2:addr.address2,city:addr.city,state:addr.state,zip:addr.zip,country:addr.country||"US"}},25000);
+  return await fedexCall({action:"address",fromZip:fromZip||"",address:{address1:addr.address1,address2:addr.address2,city:addr.city,state:addr.state,zip:addr.zip,country:countryCode(addr.country)}},25000);
 }
 
 /* ════════ SEED ════════ */
