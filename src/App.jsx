@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+\import React, { useState, useMemo, useEffect } from "react";
 import { Package, Truck, Users, Plug, Plus, Check, X, ChevronRight, ChevronDown, Wifi, WifiOff, Loader2, Trash2, ShoppingBag, ArrowLeftRight, Search, Calendar, Settings as Cog, Calculator, ExternalLink, Edit3, RotateCcw, MapPin, Printer, Building2, CreditCard, BarChart3, Layers, FileText, Undo2, Zap, Download, Boxes, CheckCircle2, AlertTriangle, TrendingUp, ShieldCheck, Mail, Cloud, Receipt, Wallet, Upload, Star, Send, Home, BookUser, DollarSign, ScanLine } from "lucide-react";
 const FW_BLUE="#0099FF";
 const FW_DARK="#111418";
@@ -518,7 +518,7 @@ export default function App(){
           <button onClick={()=>setNavOpen(true)} className="md:hidden p-2 -ml-1 rounded-lg hover:bg-stone-100 text-stone-600" aria-label="Menu"><Layers className="w-5 h-5"/></button>
           <BrandCloud className="h-7 sm:h-8 w-auto"/>
           <span className="font-extrabold tracking-tight text-[15px] sm:text-[17px]" style={{color:FW_DARK}}>Shipping<span style={{color:FW_BLUE}}>Cloud</span></span>
-          <span className="hidden sm:flex items-center gap-1.5 text-stone-400 text-xs"><span className="w-px h-5 bg-stone-200"/>by<img src={FW_LOGO} alt="Freightwire" className="h-4 w-auto object-contain"/></span>
+          <span className="hidden sm:flex items-center gap-1.5 text-stone-400 text-xs"><span className="w-px h-5 bg-stone-200"/>by<img src={FW_LOGO} alt="Freightwire" className="h-3 w-auto object-contain"/></span>
           <div className="flex-1"/>
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="text-right leading-tight hidden sm:block"><div className="text-sm font-medium text-stone-800">{currentUser.name}</div><div className="text-[11px] text-stone-400">{currentUser.role==="admin"?"Administrator":(clients.find(c=>c.id===currentUser.clientId)||{}).name||"Customer"}</div></div>
@@ -739,11 +739,9 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
           <button onClick={swap} title="Swap" className="hidden lg:flex absolute left-1/2 top-6 -translate-x-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-stone-200 border border-stone-300 hover:bg-stone-300 text-stone-700"><ArrowLeftRight className="w-4 h-4"/></button>
           <AddressCard title="Receiver" data={receiver} set={setReceiver} required residential={residential} setResidential={(v)=>{setResTouched(true);setRes(v);}} addresses={settings.addresses} onPick={(a)=>{ if(a&&a.acctNum){setBillTo("third");setThirdAcct(a.acctNum);} else {setBillTo(settings.defaultBillTo||"sender");setThirdAcct("");} }}/>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs -mt-1">
-          {billTo==="third"&&thirdAcct
-            ?<span className="flex items-center gap-1.5 text-[#006FBF] bg-[#E6F4FF] border border-[#99D6FF] rounded-lg px-3 py-1.5"><CreditCard className="w-3.5 h-3.5"/>Auto-billing to third-party account <b className="font-mono">{thirdAcct}</b><button onClick={()=>{setBillTo("sender");setThirdAcct("");}} className="ml-1 text-[#0086E0] hover:text-[#006FBF] underline">bill sender instead</button></span>
-            :<span className="flex items-center gap-1.5 text-stone-400"><CreditCard className="w-3.5 h-3.5"/>Billing to sender (your account)</span>}
-        </div>
+        {billTo==="third"&&thirdAcct&&<div className="flex flex-wrap items-center gap-2 text-xs -mt-1">
+          <span className="flex items-center gap-1.5 text-[#006FBF] bg-[#E6F4FF] border border-[#99D6FF] rounded-lg px-3 py-1.5"><CreditCard className="w-3.5 h-3.5"/>Auto-billing to third-party account <b className="font-mono">{thirdAcct}</b><button onClick={()=>{setBillTo("sender");setThirdAcct("");}} className="ml-1 text-[#0086E0] hover:text-[#006FBF] underline">bill sender instead</button></span>
+        </div>}
         {intl&&<div className="flex items-center gap-2 text-sm text-[#006FBF] bg-[#E6F4FF] border border-[#99D6FF] rounded-lg px-3 py-2"><MapPin className="w-4 h-4"/>International shipment to <b>{receiver.country}</b> — FedEx &amp; DHL rates shown, customs info required below.</div>}
         <div className="flex flex-wrap items-center gap-3 text-xs">
           {!verify||verify.loading
@@ -2169,6 +2167,22 @@ function AddressCard({title,data,set,required,residential,setResidential,address
   const f=(k,v)=>set({...data,[k]:v});
   const [q,setQ]=useState("");
   const [open,setOpen]=useState(false);
+  // Auto-fill city + state when a 5-digit ZIP is entered
+  const lastZip=React.useRef("");
+  useEffect(()=>{
+    const zip=String(data.zip||"").trim();
+    if(!/^\d{5}$/.test(zip)||zip===lastZip.current)return;
+    lastZip.current=zip;
+    let cancel=false;
+    const t=setTimeout(()=>{
+      fetch("https://api.zippopotam.us/us/"+zip).then(r=>r.ok?r.json():null).then(d=>{
+        if(cancel||!d||!d.places||!d.places[0])return;
+        const p=d.places[0];
+        set(prev=>({...prev,city:p["place name"]||prev.city,state:p["state abbreviation"]||prev.state}));
+      }).catch(()=>{});
+    },400);
+    return ()=>{cancel=true;clearTimeout(t);};
+  },[data.zip]);
   const matches=(addresses||[]).filter(a=>q.trim()&&[a.name,a.company,a.city,a.zip,a.address1].filter(Boolean).some(v=>String(v).toLowerCase().includes(q.toLowerCase()))).slice(0,6);
   const pick=(a)=>{set({...data,name:a.name||"",company:a.company||"",address1:a.address1||"",city:a.city||"",state:a.state||"",zip:a.zip||"",phone:a.phone||"",email:a.email||data.email||""});setQ("");setOpen(false);onPick&&onPick(a);};
   // cell() is a plain render helper (NOT a component) so inputs never remount → focus is kept while typing
