@@ -79,112 +79,103 @@ async function transit(c, body, tk) {
     const deliveryDate = fmtDate(dd.dayCxsFormat || dd.date || op.deliveryDate || op.commitDate || commit.commitTimestamp);
     return { serviceType: s.serviceType, serviceName: s.serviceName || s.serviceType, transitDays: days, transitLabel: transitEnum ? String(transitEnum).replace(/_/g, " ").toLowerCase() : null, deliveryDate, deliveryDay: dd.dayOfWeek || op.deliveryDay || null };
   }).filter((x) => x.serviceType);
-  return { ok: true, _fn: "addr-v9", services, _sample: details[0] || null };
+  return { ok: true, _fn: "addr-v10", services, _sample: details[0] || null };
 }
 
-// Reliable residential/commercial detection via the Rate API:
-// rate the address with NO residential flag; FedEx returns GROUND_HOME_DELIVERY for residences,
-// FEDEX_GROUND for businesses, and adds a residential surcharge when residential.
-async function rateProbe(c, recipientAddr, tk) {
+/* ════════════════════════════════════════════════════════════════
+   ADDRESS:  deliverability  +  residential/commercial   (clean rebuild)
+   - Deliverability  ← Address Validation API (DPV / Resolved flags)
+   - Residential/Commercial ← Rate API (GROUND_HOME_DELIVERY vs FEDEX_GROUND)
+     (the ONLY place FedEx reliably exposes res/commercial)
+   ════════════════════════════════════════════════════════════════ */
+
+// Rate the address (no residential flag) and read which Ground product FedEx offers.
+async function rateClassify(c, a, fromZip, tk) {
+  if (!fromZip || !c.account) return { classification: "UNKNOWN", services: [], error: "missing origin ZIP or FedEx account" };
   const today = new Date().toISOString().slice(0, 10);
-  const payload = {
-    accountNumber: { value: c.account },
-    requestedShipment: {
-      shipper: { address: { postalCode: S(c._fromZip), countryCode: "US" } },
-      recipient: { address: recipientAddr },
-      pickupType: "USE_SCHEDULED_PICKUP",
-      rateRequestType: ["LIST", "ACCOUNT"],
-      shipDateStamp: today,
-      requestedPackageLineItems: [{ weight: { units: "LB", value: 1 } }],
-    },
+  const probe = async (recipient) => {
+    const payload = {
+      accountNumber: { value: c.account },
+      requestedShipment: {
+        shipper: { address: { postalCode: S(fromZip), countryCode: "US" } },
+        recipient: { address: recipient },
+        pickupType: "USE_SCHEDULED_PICKUP",
+        rateRequestType: ["ACCOUNT"],
+        shipDateStamp: today,
+        requestedPackageLineItems: [{ weight: { units: "LB", value: 1 } }],
+      },
+    };
+    let r, t, d = null;
+    try {
+      r = await fetch(c.base + "/rate/v1/rates/quotes", { method: "POST", headers: { "Authorization": "Bearer " + tk, "Content-Type": "application/json", "X-locale": "en_US" }, body: JSON.stringify(payload) });
+      t = await r.text(); try { d = JSON.parse(t); } catch {}
+    } catch (e) { return { error: "rate fetch failed: " + (e && e.message), services: [] }; }
+    if (!r.ok) return { error: "rate HTTP " + r.status + (d && d.errors && d.errors[0] ? ": " + d.errors[0].message : ""), services: [] };
+    const det = (d && d.output && d.output.rateReplyDetails) || [];
+    const services = det.map((x) => x.serviceType);
+    let resi = services.includes("GROUND_HOME_DELIVERY");
+    const comm = services.includes("FEDEX_GROUND");
+    for (const s of det) {
+      const rsd = (s.ratedShipmentDetails && s.ratedShipmentDetails[0]) || {};
+      const surs = (rsd.shipmentRateDetail && (rsd.shipmentRateDetail.surCharges || rsd.shipmentRateDetail.surcharges)) || [];
+      if (surs.some((su) => /residential/i.test(String(su.type || su.description || "")))) resi = true;
+    }
+    return { resi, comm, services };
   };
-  let r, text, d = null;
-  try {
-    r = await fetch(c.base + "/rate/v1/rates/quotes", { method: "POST", headers: { "Authorization": "Bearer " + tk, "Content-Type": "application/json", "X-locale": "en_US" }, body: JSON.stringify(payload) });
-    text = await r.text(); try { d = JSON.parse(text); } catch {}
-  } catch (e) { return { resi: false, comm: false, services: [], error: "rate fetch failed: " + (e && e.message) }; }
-  if (!r.ok) return { resi: false, comm: false, services: [], error: "rate HTTP " + r.status + (d && d.errors ? ": " + (d.errors[0] && d.errors[0].message || JSON.stringify(d.errors)) : (text ? ": " + text.slice(0, 200) : "")) };
-  const details = (d && d.output && d.output.rateReplyDetails) || [];
-  const services = details.map((s) => s.serviceType);
-  let resi = false, comm = false;
-  for (const s of details) {
-    const st = String(s.serviceType || "");
-    if (st === "GROUND_HOME_DELIVERY") resi = true;
-    if (st === "FEDEX_GROUND") comm = true;
-    const rsd = (s.ratedShipmentDetails && s.ratedShipmentDetails[0]) || {};
-    const surs = (rsd.shipmentRateDetail && (rsd.shipmentRateDetail.surCharges || rsd.shipmentRateDetail.surcharges)) || [];
-    for (const su of surs) { if (/residential/i.test(String(su.type || su.description || ""))) resi = true; }
-  }
-  return { resi, comm, services, error: null };
-}
-
-async function classifyByRate(c, body, tk) {
-  const a = body.address || {};
-  if (!body.fromZip || !c.account) return { cls: null, services: [], error: "no fromZip/account" };
-  c._fromZip = body.fromZip;
-  // 1) probe with the full street address (gives the most accurate residential read)
-  let p = await rateProbe(c, { streetLines: [a.address1].filter(Boolean).map(S), city: S(a.city), stateOrProvinceCode: S(a.state), postalCode: S(a.zip), countryCode: a.country || "US" }, tk);
-  // 2) if FedEx rejected that exact address, fall back to a postal-code-only probe (same shape transit uses, which works)
+  // full street address first (most accurate), then postal-only fallback if FedEx rejects it
+  let p = await probe({ streetLines: [a.address1].filter(Boolean).map(S), city: S(a.city), stateOrProvinceCode: S(a.state), postalCode: S(a.zip), countryCode: a.country || "US" });
   if (p.error || (!p.resi && !p.comm)) {
-    const p2 = await rateProbe(c, { postalCode: S(a.zip), countryCode: a.country || "US" }, tk);
+    const p2 = await probe({ postalCode: S(a.zip), countryCode: a.country || "US" });
     if (!p2.error && (p2.resi || p2.comm)) p = p2;
     else if (p.error && !p2.error) p = p2;
   }
-  try { console.log("FEDEX classifyByRate services=" + p.services.join(",") + " resi=" + p.resi + " comm=" + p.comm + (p.error ? " err=" + p.error : "")); } catch (e) {}
-  const cls = p.resi ? "RESIDENTIAL" : (p.comm ? "BUSINESS" : null);
-  return { cls, services: p.services, error: p.error };
+  const classification = p.resi ? "RESIDENTIAL" : (p.comm ? "BUSINESS" : "UNKNOWN");
+  try { console.log("FEDEX rateClassify=" + classification + " services=" + (p.services || []).join(",") + (p.error ? " err=" + p.error : "")); } catch (e) {}
+  return { classification, services: p.services || [], error: p.error || null };
+}
+
+// Address Validation API → deliverability + normalized address.
+async function validateDeliverability(c, a, tk) {
+  const lines = [a.address1, a.address2].filter(Boolean).map(S);
+  const payload = { addressesToValidate: [{ address: { streetLines: lines.length ? lines : [""], city: S(a.city), stateOrProvinceCode: S(a.state), postalCode: S(a.zip), countryCode: a.country || "US" } }] };
+  let r, t, d = null;
+  try {
+    r = await fetch(c.base + "/address/v1/addresses/resolve", { method: "POST", headers: { "Authorization": "Bearer " + tk, "Content-Type": "application/json", "X-locale": "en_US" }, body: JSON.stringify(payload) });
+    t = await r.text(); try { d = JSON.parse(t); } catch {}
+  } catch (e) { return { deliverable: null, normalized: null, attrs: {}, error: "address fetch failed" }; }
+  if (!r.ok) return { deliverable: null, normalized: null, attrs: {}, error: "address HTTP " + r.status };
+  const ra = (d && d.output && d.output.resolvedAddresses && d.output.resolvedAddresses[0]) || null;
+  const attrs = (ra && ra.attributes) || {};
+  const deliverable = attrs.DPV === "true" || attrs.Resolved === "true";
+  const normalized = ra ? { streetLines: ra.streetLinesToken || ra.streetLines || null, city: ra.city, state: ra.stateOrProvinceCode, zip: ra.postalCode, country: ra.countryCode } : null;
+  return { deliverable, normalized, attrs, error: null };
 }
 
 async function address(c, body, tk) {
   const a = body.address || {};
-  const lines = [a.address1, a.address2].filter(Boolean).map(S);
-  const payload = { addressesToValidate: [{ address: { streetLines: lines.length ? lines : [""], city: S(a.city), stateOrProvinceCode: S(a.state), postalCode: S(a.zip), countryCode: a.country || "US" } }] };
-  const r = await fetch(c.base + "/address/v1/addresses/resolve", {
-    method: "POST",
-    headers: { "Authorization": "Bearer " + tk, "Content-Type": "application/json", "X-locale": "en_US" },
-    body: JSON.stringify(payload),
-  });
-  const text = await r.text();
-  let d = null; try { d = JSON.parse(text); } catch {}
-  if (!r.ok) return { ok: false, error: "FedEx address HTTP " + r.status + (d && d.errors ? ": " + (d.errors[0] && d.errors[0].message || JSON.stringify(d.errors)) : (text ? ": " + text.slice(0, 250) : "")) };
-  const res = (d && d.output && d.output.resolvedAddresses && d.output.resolvedAddresses[0]) || null;
-  const attrs = (res && res.attributes) || {};
-  try { console.log("FEDEX address validation classification=" + (res && res.classification) + " attrs=" + JSON.stringify(attrs).slice(0, 300)); } catch (e) {}
-  let cls = ((res && (res.classification || attrs.Classification)) || "UNKNOWN").toUpperCase();
-  let source = "validation";
-  let rateDebug = null;
-  // Address Validation classification is unreliable — when it's not definitive, ask the Rate API.
-  if (cls !== "RESIDENTIAL" && cls !== "BUSINESS") {
-    const byRate = await classifyByRate(c, body, tk);
-    rateDebug = { services: byRate.services, error: byRate.error };
-    if (byRate.cls) { cls = byRate.cls; source = "rate"; }
-  }
-  // Deliverability comes from real USPS/FedEx validation flags (DPV = Delivery Point Validation = a real, deliverable point)
-  const dpv = attrs.DPV === "true";
-  const resolvedOk = attrs.Resolved === "true";
-  const matched = attrs.Matched === "true";
-  const deliverable = dpv || resolvedOk;
+  // run both lookups together
+  const [val, cls] = await Promise.all([
+    validateDeliverability(c, a, tk),
+    rateClassify(c, a, body.fromZip || "", tk),
+  ]);
+  const attrs = val.attrs || {};
   const issues = [];
-  if (!deliverable) {
+  if (val.deliverable === false) {
     if (attrs.SuiteRequiredButMissing === "true") issues.push("Apartment/suite number required");
     else if (attrs.InvalidSuiteNumber === "true") issues.push("Invalid apartment/suite number");
-    else if (attrs.MultipleMatches === "true") issues.push("Ambiguous — multiple matches");
-    else if (attrs.CityStateValidated === "true" && !matched) issues.push("Street not found at this ZIP");
-    else issues.push("Address not recognized by FedEx");
+    else if (attrs.MultipleMatches === "true") issues.push("Ambiguous — multiple matches found");
+    else if (attrs.CityStateValidated === "true") issues.push("Street not found at this ZIP");
+    else issues.push("Address not found by FedEx");
   }
   return {
     ok: true,
-    _fn: "addr-v9",
-    deliverable,                          // TRUE = FedEx/USPS confirms a real deliverable address
-    verified: deliverable,
+    _fn: "addr-v10",
+    deliverable: val.deliverable,                       // true / false / null(=couldn't check)
+    classification: cls.classification,                 // RESIDENTIAL | BUSINESS | UNKNOWN
+    residential: cls.classification === "RESIDENTIAL",
+    normalized: val.normalized,
     issues: issues.length ? issues : null,
-    classification: cls,                  // RESIDENTIAL | BUSINESS | UNKNOWN  (from rate-probe; Address API never returns this)
-    residential: cls === "RESIDENTIAL",
-    source,                               // "rate" when classified, "validation" when unknown
-    validationClassification: (res && res.classification) || null,
-    rateDebug,
-    normalized: res ? { streetLines: res.streetLinesToken || res.streetLines || null, city: res.city, state: res.stateOrProvinceCode, zip: res.postalCode, country: res.countryCode } : null,
-    attributes: attrs,
+    debug: { services: cls.services, classifyError: cls.error, deliverError: val.error, attrs },
   };
 }
 
