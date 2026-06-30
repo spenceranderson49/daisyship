@@ -9,6 +9,7 @@ const FW_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfIAAAAsCAYAAACe0jo
 
 
 const DEFAULT_BRAND={name1:"Shipping",name2:"Cloud",primary:FW_BLUE,dark:FW_DARK,partnerLabel:"by",logo:FW_LOGO,showLogo:true};
+const BUILD_TAG="addr-v9";
 
 /* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
@@ -649,6 +650,7 @@ export default function App(){
           <BrandCloud className="h-10 sm:h-11 w-auto" color={brand.primary}/>
           <span className="font-extrabold tracking-tight text-[20px] sm:text-[26px]" style={{color:brand.dark}}>{brand.name1}<span style={{color:brand.primary}}>{brand.name2}</span></span>
           {brand.showLogo&&brand.logo&&<span className="hidden sm:flex items-center gap-1.5 text-stone-400 text-xs"><span className="w-px h-5 bg-stone-200"/>{brand.partnerLabel}<img src={brand.logo} alt="partner" className="h-3 w-auto object-contain"/></span>}
+          <span className="hidden sm:inline text-[9px] font-mono text-stone-300 ml-1" title="deployed build">{BUILD_TAG}</span>
           <div className="flex-1"/>
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="text-right leading-tight hidden sm:block"><div className="text-sm font-medium text-stone-800">{currentUser.name}</div><div className="text-[11px] text-stone-400">{currentUser.role==="admin"?"Administrator":(clients.find(c=>c.id===currentUser.clientId)||{}).name||"Customer"}</div></div>
@@ -725,6 +727,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
   const [shipStatus,setShipStatus]=useState(null);
   const [selectedOrder,setSelectedOrder]=useState(null);
   const [verify,setVerify]=useState(null);
+  const [verifyNonce,setVerifyNonce]=useState(0);
   const [saved,setSaved]=useState(false);
   const [emailTo,setEmailTo]=useState("");
   const [emailMsg,setEmailMsg]=useState(settings.emailMessage||"");
@@ -762,7 +765,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
       }
     },700);
     return ()=>{cancel=true;clearTimeout(t);};
-  },[receiver.address1,receiver.zip,receiver.city,receiver.state]);
+  },[receiver.address1,receiver.zip,receiver.city,receiver.state,verifyNonce]);
 
   const applyOrder=(o)=>{setSelectedOrder(o.id);setReference(o.name);setReceiver({...empty,name:o.customer||"",company:o.company||"",zip:o.zip||"",state:o.state||"",city:o.city||"",address1:o.address1||"",phone:o.phone||"",email:o.email||""});setPieces([{weight:o.weight||1,L:12,W:9,H:4}]);};
   useEffect(()=>{ if(!prefill)return;
@@ -878,6 +881,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
               :<span className="flex items-center gap-1.5 text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 font-medium" title={verify.issues?verify.issues.join(" · "):"FedEx could not verify this address as deliverable"}><AlertTriangle className="w-3.5 h-3.5"/>{verify.issues?verify.issues.join(" · "):"FedEx couldn’t verify this address"}</span>)}
           {verify&&!verify.loading&&verify.type&&<span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border ${verify.type==="Residential"?"text-[#006FBF] bg-[#E6F4FF] border-[#99D6FF]":"text-stone-700 bg-stone-100 border-stone-200"}`} title={"FedEx classified this address as "+verify.type}>{verify.type==="Residential"?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{verify.type} · FedEx</span>}
           {verify&&!verify.loading&&!verify.type&&verify.deliverable&&<span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border text-stone-500 bg-stone-50 border-stone-200" title="FedEx didn’t return a residential/commercial classification for this address — set it with the toggle on the receiver card">{residential?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{residential?"Residential":"Commercial"} · set below</span>}
+          {receiver.address1&&/^\d{5}/.test(receiver.zip||"")&&<button onClick={()=>setVerifyNonce(n=>n+1)} className="flex items-center gap-1 text-stone-400 hover:text-[#0086E0] underline" title="Re-check this address with FedEx"><ShieldCheck className="w-3.5 h-3.5"/>Re-check</button>}
         </div>
 
         <div className="bg-stone-100 border border-stone-200 rounded-lg p-3 space-y-2">
