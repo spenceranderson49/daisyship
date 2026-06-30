@@ -9,7 +9,7 @@ const FW_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfIAAAAsCAYAAACe0jo
 
 
 const DEFAULT_BRAND={name1:"Shipping",name2:"Cloud",primary:FW_BLUE,dark:FW_DARK,partnerLabel:"by",logo:FW_LOGO,showLogo:true};
-const BUILD_TAG="addr-v23";
+const BUILD_TAG="addr-v24";
 
 /* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
@@ -746,6 +746,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
   const [thirdAcct,setThirdAcct]=useState("");
   const [bought,setBought]=useState(null);
   const [shipStatus,setShipStatus]=useState(null);
+  const [labelPreview,setLabelPreview]=useState(null); // {pdf, tracking, service, carrier}
   const [selectedOrder,setSelectedOrder]=useState(null);
   const [verify,setVerify]=useState(null);
   const [verifyNonce,setVerifyNonce]=useState(0);
@@ -864,7 +865,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
     const order={orderId:"SC"+Date.now(),reference:reference||invoiceNo||"",orderNumber:invoiceNo||reference||"",shippingService:q.label,shippingTotal:String(q.sell??q.cost??"0.00"),contentDescription:"Merchandise",signatureOption:sigOption,saturdayDelivery:saturday,insuranceAmount:insurance||null,sender:{...sender,country:sender.country||"US"},receiver:{...receiver,country:receiver.country||"US"},pieces:pieces.map(p=>({weight:p.weight,length:p.L,width:p.W,height:p.H}))};
     const res=await shipCall({action:"ship",account:acctOf(eng),order});
     if(!res||!res.ok){setShipStatus({state:"error",key:q.key,msg:(res&&res.error)||"Booking failed"});setBought(null);return;}
-    const done=(st)=>{ if(st.labelPdfBase64)openLabelPdf(st.labelPdfBase64); onShipped(buildRec(q,carrier,st),selectedOrder); setShipStatus({state:"booked",key:q.key,tracking:st.tracking}); setTimeout(()=>{setBought(null);setShipStatus(null);},2600); };
+    const done=(st)=>{ onShipped(buildRec(q,carrier,st),selectedOrder); if(st.labelPdfBase64){setLabelPreview({pdf:st.labelPdfBase64,tracking:st.tracking,service:q.label,carrier});} else if(st.labelError){setShipStatus({state:"label_err",key:q.key,msg:st.labelError});} setShipStatus({state:"booked",key:q.key,tracking:st.tracking}); setTimeout(()=>{setBought(null);setShipStatus(null);},2600); };
     if(res.booked){done(res);return;}
     setShipStatus({state:"pending",key:q.key,orderId:res.orderId});
     pollLabel(eng,res.orderId,done).then(r=>{ if(r&&r.timedOut){setShipStatus({state:"pending_timeout",key:q.key});setBought(null);} });
@@ -1009,6 +1010,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
           :<><Calculator className="w-3.5 h-3.5"/>Estimated rates{rateSrc.error?` · ${rateSrc.error}`:""} — connect your England account in Settings → Carrier accounts for live pricing</>}
         </div>}
         <ServiceList quotes={quotes} best={best} bought={bought} action={ready?print:null} label="Print label" doneLabel="Printed" ready={ready}/>
+        {labelPreview&&<LabelPreviewModal data={labelPreview} onClose={()=>setLabelPreview(null)}/>}
         {shipStatus&&<div className={`flex items-center gap-2 text-sm rounded-lg px-3 py-2.5 ${shipStatus.state==="error"?"bg-rose-50 text-rose-700 border border-rose-200":shipStatus.state==="booked"?"bg-emerald-50 text-emerald-700 border border-emerald-200":shipStatus.state==="pending_timeout"?"bg-amber-50 text-amber-700 border border-amber-200":"bg-[#E6F4FF] text-[#006FBF] border border-[#99D6FF]"}`}>
           {shipStatus.state==="booking"&&<><Loader2 className="w-4 h-4 animate-spin"/>Booking label on your England account…</>}
           {shipStatus.state==="pending"&&<><Loader2 className="w-4 h-4 animate-spin"/>Order pushed to England — waiting for it to book and return the label…</>}
@@ -1085,6 +1087,39 @@ function CommercialInvoice({sender,receiver,customs,total,reference,pieces,total
 
 const addBizDays=(n)=>{const d=new Date();let added=0;let guard=0;while(added<n&&guard<60){d.setDate(d.getDate()+1);const day=d.getDay();if(day!==0&&day!==6)added++;guard++;}return d;};
 const fmtDeliv=(d)=>d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});
+function LabelPreviewModal({data,onClose}){
+  const [url,setUrl]=useState(null);
+  const frameRef=React.useRef(null);
+  const printed=React.useRef(false);
+  useEffect(()=>{
+    try{
+      const bin=atob(data.pdf);const bytes=new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+      const blob=new Blob([bytes],{type:"application/pdf"});
+      const u=URL.createObjectURL(blob);setUrl(u);
+      return ()=>URL.revokeObjectURL(u);
+    }catch(e){}
+  },[data.pdf]);
+  const doPrint=()=>{ const f=frameRef.current; try{ if(f&&f.contentWindow){f.contentWindow.focus();f.contentWindow.print();return;} }catch(e){} if(url)window.open(url,"_blank"); };
+  const download=()=>{ if(!url)return; const a=document.createElement("a");a.href=url;a.download=`label-${data.tracking||"shipment"}.pdf`;a.click(); };
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl" onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200">
+          <div><div className="font-semibold text-stone-800 flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-600"/>Label booked</div><div className="text-[11px] text-stone-400">{data.service}{data.tracking?` · ${data.tracking}`:""}</div></div>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-700"><X className="w-5 h-5"/></button>
+        </div>
+        <div className="flex-1 min-h-0 bg-stone-100">
+          {url?<iframe ref={frameRef} src={url} title="Shipping label" className="w-full h-full" style={{minHeight:"55vh"}} onLoad={()=>{ if(!printed.current){printed.current=true;setTimeout(doPrint,500);} }}/>:<div className="flex items-center justify-center h-full text-stone-400" style={{minHeight:"55vh"}}><Loader2 className="w-5 h-5 animate-spin"/></div>}
+        </div>
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-stone-200">
+          <button onClick={download} className="text-sm px-3 py-2 rounded border border-stone-200 text-stone-600 hover:bg-stone-50 flex items-center gap-1.5"><Download className="w-4 h-4"/>Download</button>
+          <button onClick={doPrint} className="text-sm px-4 py-2 rounded bg-stone-900 text-white hover:bg-stone-800 flex items-center gap-1.5"><Printer className="w-4 h-4"/>Print label</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 function ServiceList({quotes,best,bought,action,label,doneLabel,showCost,ready=true}){
   const [view,setView]=useState("cheapest");
   const [open,setOpen]=useState(null);
