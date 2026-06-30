@@ -1,4 +1,4 @@
-# DaisyShip
+# ShippingCloud
 
 A multi-carrier shipping platform: rate-shop **England Logistics**, **UPS**, and **FedEx**,
 mark the rates up per client, buy labels, and run **Shopify** order fulfillment + live
