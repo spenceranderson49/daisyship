@@ -9,7 +9,7 @@ const FW_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfIAAAAsCAYAAACe0jo
 
 
 const DEFAULT_BRAND={name1:"Shipping",name2:"Cloud",primary:FW_BLUE,dark:FW_DARK,partnerLabel:"by",logo:FW_LOGO,showLogo:true};
-const BUILD_TAG="addr-v26";
+const BUILD_TAG="addr-v28";
 
 /* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
@@ -127,6 +127,94 @@ async function pollLabel(england,orderId,onUpdate){
 /* ════════ FEDEX (transit times + address validation) ════════ */
 const FEDEX_ENDPOINT="/.netlify/functions/fedex";
 const PLACES_ENDPOINT="/.netlify/functions/places";
+const SHOPIFY_AUTH="/.netlify/functions/shopify-auth";
+const SHOPIFY_SYNC="/.netlify/functions/shopify-sync";
+const SHOPIFY_FULFILL="/.netlify/functions/shopify-fulfill";
+async function shopifyCall(endpoint,payload,timeout=20000){
+  const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),timeout);
+  try{
+    const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),signal:ctrl.signal});
+    clearTimeout(t);
+    let data=null;try{data=await r.json();}catch(e){data={ok:false,error:"Bad response"};}
+    return data||{ok:false,error:"Empty response"};
+  }catch(e){clearTimeout(t);return {ok:false,error:(e&&e.message)||"Network error"};}
+}
+const shopifyConnected=(s)=>!!(s&&s.shopifyConn&&s.shopifyConn.shop&&s.shopifyConn.token);
+async function shopifySyncOrders(conn){ return shopifyCall(SHOPIFY_SYNC,{shop:conn.shop,token:conn.token}); }
+async function shopifyPushTracking(conn,o){ return shopifyCall(SHOPIFY_FULFILL,{shop:conn.shop,token:conn.token,shopifyId:o.shopifyId,tracking:o.tracking,trackingUrl:o.trackingUrl||(o.tracking?`https://www.fedex.com/fedextrack/?trknbr=${o.tracking}`:""),carrier:o.carrier||"FedEx"}); }
+const fn=(name)=>"/.netlify/functions/"+name;
+async function connectorCall(endpoint,payload){ return shopifyCall(endpoint,payload); }
+// OAuth returns handed back in the URL fragment by the *-auth functions
+const OAUTH_RETURNS=[
+  {flag:"qbo_connected",id:"quickbooks",map:{realmId:"realmId",accessToken:"access",refreshToken:"refresh"}},
+  {flag:"sf_connected",id:"salesforce",map:{instanceUrl:"instance",accessToken:"access",refreshToken:"refresh"}},
+  {flag:"xero_connected",id:"xero",map:{accessToken:"access",refreshToken:"refresh",tenantId:"tenant"}},
+  {flag:"ebay_connected",id:"ebay",map:{accessToken:"access",refreshToken:"refresh"}},
+  {flag:"etsy_connected",id:"etsy",map:{accessToken:"access",refreshToken:"refresh",userId:"userId"}},
+];
+// Connector catalog: drives the Integrations tiles, the setup modal, sync + tracking push.
+const CONNECTORS=[
+  {id:"woocommerce",name:"WooCommerce",tint:"bg-[#96588A]/15 text-[#96588A]",auth:"token",orders:true,endpoint:"woocommerce",
+    fields:[["storeUrl","Store URL","https://yourstore.com"],["key","Consumer key","ck_…"],["secret","Consumer secret","cs_…"]],
+    instr:["In WordPress admin go to WooCommerce → Settings → Advanced → REST API.","Click “Add key”. Set permissions to Read/Write, then Generate API key.","Copy the Consumer key and Consumer secret (shown once).","Paste them plus your store URL above and click Save."]},
+  {id:"bigcommerce",name:"BigCommerce",tint:"bg-[#121118]/10 text-[#121118]",auth:"token",orders:true,endpoint:"bigcommerce",
+    fields:[["storeHash","Store hash","abc123"],["token","Access token","…"]],
+    instr:["In BigCommerce go to Settings → API → Store-level API accounts → Create API account.","Scopes: set Orders = Modify and Products = Read-only.","Save. Copy the Access Token, and the Store Hash from the API path (api.bigcommerce.com/stores/<HASH>/).","Paste both above and click Save."]},
+  {id:"shipstation",name:"ShipStation",tint:"bg-[#0B5394]/12 text-[#0B5394]",auth:"token",orders:true,endpoint:"shipstation",
+    fields:[["apiKey","API key","…"],["apiSecret","API secret","…"]],
+    instr:["In ShipStation go to Account → Account Settings → API Settings.","Click Generate New API Keys (if you don’t have them).","Copy the API Key and API Secret.","Paste both above and click Save."]},
+  {id:"amazon",name:"Amazon",tint:"bg-[#FF9900]/15 text-[#B66A00]",auth:"token",orders:true,endpoint:"amazon",
+    fields:[["lwaClientId","LWA client id","amzn1.application-oa2-client.…"],["lwaClientSecret","LWA client secret","…"],["refreshToken","Refresh token","Atzr|…"],["marketplaceId","Marketplace id (US = ATVPDKIKX0DER)","ATVPDKIKX0DER"]],
+    instr:["In Seller Central open Apps & Services → Develop Apps.","Create a private SP-API app (roles: Orders).","Authorize it on your seller account and copy the LWA client id, client secret, and the refresh token from the self-authorization.","Paste them above (US marketplace id is ATVPDKIKX0DER) and click Save."]},
+  {id:"walmart",name:"Walmart",tint:"bg-[#0071DC]/12 text-[#0071DC]",auth:"token",orders:true,endpoint:"walmart",
+    fields:[["clientId","Client ID","…"],["clientSecret","Client secret","…"]],
+    instr:["In Walmart Seller Center go to Settings → Developer → API Key Management.","Generate Production keys.","Copy the Client ID and Client Secret.","Paste both above and click Save."]},
+  {id:"magento",name:"Magento / Adobe",tint:"bg-[#EE672F]/15 text-[#EE672F]",auth:"token",orders:true,endpoint:"magento",
+    fields:[["storeUrl","Store URL","https://yourstore.com"],["token","Integration access token","…"]],
+    instr:["In Magento admin go to System → Extensions → Integrations → Add New Integration.","Grant Sales/Orders + Shipments resource access. Save.","Click Activate, then copy the Access Token.","Paste it plus your store URL above and click Save."]},
+  {id:"square",name:"Square",tint:"bg-[#111]/10 text-[#111]",auth:"token",orders:true,endpoint:"square",
+    fields:[["token","Access token","EAAA…"],["locationId","Location ID","L…"],["env","Environment (production/sandbox)","production"]],
+    instr:["Go to developer.squareup.com → Applications → your app.","Open Credentials and copy the Production Access Token.","Open Locations and copy your Location ID.","Paste both above (env = production) and click Save."]},
+  {id:"wix",name:"Wix",tint:"bg-[#0C6EFC]/12 text-[#0C6EFC]",auth:"token",orders:true,endpoint:"wix",
+    fields:[["apiKey","API key","…"],["siteId","Site ID","…"]],
+    instr:["Go to Wix → Settings → Headless / API Keys (manage.wix.com → API Keys).","Generate an API key with Stores/Orders permissions.","Copy the API key and your Site ID.","Paste both above and click Save."]},
+  {id:"squarespace",name:"Squarespace",tint:"bg-[#111]/10 text-[#111]",auth:"token",orders:true,endpoint:"squarespace",
+    fields:[["apiKey","API key","…"]],
+    instr:["In Squarespace go to Settings → Developer API Keys.","Generate a key with Orders (Read/Write) permission.","Copy the API key.","Paste it above and click Save."]},
+  {id:"netsuite",name:"NetSuite",tint:"bg-[#2D5C34]/12 text-[#2D5C34]",auth:"token",orders:false,endpoint:"netsuite",
+    fields:[["accountId","Account ID","1234567 or 1234567_SB1"],["consumerKey","Consumer key","…"],["consumerSecret","Consumer secret","…"],["tokenId","Token ID","…"],["tokenSecret","Token secret","…"]],
+    instr:["Enable SuiteTalk REST Web Services + Token-Based Auth (Setup → Company → Enable Features).","Create an Integration record → copy Consumer Key + Secret.","Create an Access Token (Setup → Users/Roles → Access Tokens) → copy Token ID + Secret.","Paste all five (plus your Account ID) above and click Save."]},
+  {id:"hubspot",name:"HubSpot",tint:"bg-[#FF7A59]/15 text-[#FF7A59]",auth:"token",orders:false,endpoint:"hubspot",
+    fields:[["token","Private app token","pat-na1-…"]],
+    instr:["In HubSpot go to Settings → Integrations → Private Apps → Create a private app.","Add scopes: crm.objects.contacts (r/w) and crm.objects.deals (r/w).","Create the app and copy the Access Token.","Paste it above and click Save."]},
+  {id:"pipedrive",name:"Pipedrive",tint:"bg-[#111]/10 text-[#111]",auth:"token",orders:false,endpoint:"pipedrive",
+    fields:[["token","API token","…"],["domain","Company domain (before .pipedrive.com)","yourco"]],
+    instr:["In Pipedrive go to Settings → Personal preferences → API.","Copy your personal API token.","Note your company domain (the part before .pipedrive.com in your URL).","Paste both above and click Save."]},
+  {id:"shipbob",name:"ShipBob",tint:"bg-[#1F6FEB]/12 text-[#1F6FEB]",auth:"token",orders:true,endpoint:"shipbob",
+    fields:[["token","Personal access token","…"],["channelId","Channel ID (optional)",""]],
+    instr:["In ShipBob go to Integrations → API Tokens (or the Developer portal).","Generate a Personal Access Token.","Optionally copy your Channel ID.","Paste above and click Save."]},
+  {id:"ordoro",name:"Ordoro",tint:"bg-[#2BB673]/15 text-[#1E7D50]",auth:"token",orders:true,endpoint:"ordoro",
+    fields:[["username","API username","…"],["password","API password","…"]],
+    instr:["In Ordoro go to Settings → API.","Create/copy your API username and password.","Paste both above and click Save."]},
+  // OAuth connectors — Connect button starts the handshake; tokens come back automatically
+  {id:"quickbooks",name:"QuickBooks Online",tint:"bg-[#2CA01C]/15 text-[#2CA01C]",auth:"oauth",orders:false,endpoint:"quickbooks",env:["QBO_CLIENT_ID","QBO_CLIENT_SECRET"],
+    instr:["Go to developer.intuit.com → My Apps → create an app with the Accounting scope.","Set the Redirect URI to:  https://shippingcloud.net/.netlify/functions/quickbooks","Copy the Client ID + Client Secret. (Send them to your admin to set as QBO_CLIENT_ID / QBO_CLIENT_SECRET in Netlify, or set them yourself.)","Then click “Connect with QuickBooks” below and approve."]},
+  {id:"xero",name:"Xero",tint:"bg-[#13B5EA]/15 text-[#0E8FBA]",auth:"oauth",orders:false,endpoint:"xero",env:["XERO_CLIENT_ID","XERO_CLIENT_SECRET"],
+    instr:["Go to developer.xero.com → New app.","Set the Redirect URI to:  https://shippingcloud.net/.netlify/functions/xero","Copy the Client ID + Client Secret and set them as XERO_CLIENT_ID / XERO_CLIENT_SECRET in Netlify.","Then click “Connect with Xero” below and approve."]},
+  {id:"salesforce",name:"Salesforce",tint:"bg-[#00A1E0]/15 text-[#0079A1]",auth:"oauth",orders:false,endpoint:"salesforce",env:["SF_CLIENT_ID","SF_CLIENT_SECRET"],
+    instr:["In Salesforce: Setup → App Manager → New Connected App, enable OAuth.","Set the Callback URL to:  https://shippingcloud.net/.netlify/functions/salesforce","Scopes: api, refresh_token. Copy the Consumer Key + Secret and set them as SF_CLIENT_ID / SF_CLIENT_SECRET in Netlify.","Then click “Connect with Salesforce” below and approve."]},
+  {id:"ebay",name:"eBay",tint:"bg-[#E53238]/12 text-[#E53238]",auth:"oauth",orders:true,endpoint:"ebay",env:["EBAY_CLIENT_ID","EBAY_CLIENT_SECRET","EBAY_RUNAME"],
+    instr:["Go to developer.ebay.com → your keyset → User Tokens → create a Redirect URL name (RuName).","Set the RuName’s accepted URL to:  https://shippingcloud.net/.netlify/functions/ebay","Set EBAY_CLIENT_ID, EBAY_CLIENT_SECRET and EBAY_RUNAME in Netlify.","Then click “Connect with eBay” below and approve."]},
+  {id:"etsy",name:"Etsy",tint:"bg-[#F1641E]/15 text-[#F1641E]",auth:"oauth",orders:true,endpoint:"etsy",env:["ETSY_CLIENT_ID","ETSY_CLIENT_SECRET"],postShopId:true,
+    instr:["Go to etsy.com/developers → Create a New App.","Set the Callback URL to:  https://shippingcloud.net/.netlify/functions/etsy","Copy the Keystring (client id) + Shared secret and set them as ETSY_CLIENT_ID / ETSY_CLIENT_SECRET in Netlify.","Click “Connect with Etsy” below, approve, then enter your numeric Shop ID when prompted."]},
+  // QuickBooks Desktop — Web Connector
+  {id:"quickbooks-desktop",name:"QuickBooks Desktop",tint:"bg-[#2CA01C]/15 text-[#2CA01C]",auth:"qwc",orders:false,endpoint:"quickbooks-desktop",env:["QBWC_USER","QBWC_PASS"],
+    instr:["Have an admin set QBWC_USER and QBWC_PASS in Netlify (the Web Connector login).","On the PC running QuickBooks, install the QuickBooks Web Connector (free from Intuit).","Click “Download .qwc” below, then in the Web Connector choose File → Add an Application and pick that file; enter the QBWC password.","Open QuickBooks as Admin and approve the app. It will sync every few minutes; queued invoices post automatically."]},
+];
+const connectorOf=(id)=>CONNECTORS.find(c=>c.id===id);
+const connConnected=(settings,c)=>{ const v=(settings.conn||{})[c.id]; if(!v)return false; if(c.auth==="token")return c.fields.every(([k])=>k==="channelId"||k==="env"||k==="marketplaceId"||v[k]); if(c.auth==="oauth")return !!(v.accessToken||v.token); return !!v.saved; };
+async function connectorSyncOrders(c,creds){ return connectorCall(fn(c.endpoint),{...creds,action:"sync"}); }
+async function connectorPushTracking(c,creds,o){ return connectorCall(fn(c.endpoint),{...creds,action:"fulfill",orderId:o.platformId,tracking:o.tracking,trackingUrl:o.trackingUrl||(o.tracking?`https://www.fedex.com/fedextrack/?trknbr=${o.tracking}`:""),carrier:o.carrier||"FedEx",lineItemIds:o.lineItemIds,lines:o.lines,version:o.version}); }
 async function placesCall(payload,timeout=8000){
   const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),timeout);
   try{
@@ -643,6 +731,33 @@ export default function App(){
   const [settings,setSettings]=usePersist("settings",{company:"Sparkle in Pink",sender:{name:"Matt Goeckeritz",company:"Riley Blake Designs",zip:"84003",state:"UT",city:"Lehi",address1:"4060 W 2100 N",phone:"801-816-0540",email:"spencertesttes@test.com"},defaultBillTo:"sender",thirdPartyAccts:[{id:"tp1",carrier:"FedEx",account:"20601652",label:"England FedEx"}],shopify:true,notify:NOTIFY_DEFAULTS,boxes:SEED_BOXES,checkout:CHECKOUT_DEFAULTS,platforms:PLATFORM_DEFAULTS,plan:"starter",england:{enabled:false,base:"https://englandship.rocksolidinternet.com",apiKey:"",customerId:"",account:"20601652"},addresses:[{id:"ab1",name:"Riley Blake Designs",city:"Lehi",state:"UT",zip:"84003",address1:"4060 W 2100 N"}],brand:DEFAULT_BRAND,domains:[]});
 
   useEffect(()=>{ if(currentUser&&currentUser.role==="customer"&&currentUser.clientId) setClientId(currentUser.clientId); },[currentUser]);
+  // Capture the Shopify connection handed back by the OAuth function (#shop=…&token=…)
+  useEffect(()=>{
+    try{
+      const h=window.location.hash||"";
+      const search=window.location.search||"";
+      if(search.indexOf("shopify_connected")>-1||h.indexOf("shop=")>-1){
+        const p=new URLSearchParams(h.replace(/^#/,""));
+        const shop=p.get("shop"),token=p.get("token");
+        if(shop&&token){ setSettings(s=>({...s,shopifyConn:{shop,token,connectedAt:new Date().toISOString()}})); }
+        const clean=window.location.origin+window.location.pathname;
+        window.history.replaceState({},document.title,clean);
+        return;
+      }
+      // generic OAuth returns for the other connectors
+      for(const r of OAUTH_RETURNS){
+        if(search.indexOf(r.flag)>-1){
+          const p=new URLSearchParams(h.replace(/^#/,""));
+          const rec={connectedAt:new Date().toISOString()};
+          Object.entries(r.map).forEach(([dest,src])=>{const v=p.get(src);if(v)rec[dest]=v;});
+          setSettings(s=>({...s,conn:{...(s.conn||{}),[r.id]:{...((s.conn||{})[r.id]||{}),...rec}}}));
+          const clean=window.location.origin+window.location.pathname;
+          window.history.replaceState({},document.title,clean);
+          break;
+        }
+      }
+    }catch(e){}
+  },[]);
   const brand={...DEFAULT_BRAND,...(settings.brand||{})};
   const client=clients.find(c=>c.id===clientId)||clients[0];
   const logEmail=(e)=>setEmails(p=>[{id:"e"+Date.now()+Math.random(),date:new Date().toLocaleString(),status:"sent",...e},...p]);
@@ -652,6 +767,30 @@ export default function App(){
   const onShipped=(rec,orderId)=>{
     setShipments(p=>[{...rec,dayAgo:0,client:client.name},...p]);
     if(orderId) setOrders(o=>o.map(x=>x.id===orderId?{...x,status:"fulfilled",tracking:rec.tracking}:x));
+    // push tracking back to Shopify if this order came from a connected store
+    if(orderId&&shopifyConnected(settings)){
+      const ord=orders.find(x=>x.id===orderId);
+      if(ord&&ord.source==="Shopify"&&ord.shopifyId){
+        shopifyPushTracking(settings.shopifyConn,{shopifyId:ord.shopifyId,tracking:rec.tracking,carrier:rec.carrier}).then(res=>{
+          if(res&&res.ok){ setOrders(o=>o.map(x=>x.id===orderId?{...x,shopifyFulfilled:true}:x)); }
+          else { logEmail&&logEmail({to:"system",subject:"Shopify fulfillment failed: "+((res&&res.error)||"unknown"),type:"System"}); }
+        });
+      }
+    }
+    // push tracking back to any other connected platform this order came from
+    if(orderId){
+      const ord=orders.find(x=>x.id===orderId);
+      const SRC={WooCommerce:["woocommerce","woocommerceId"],BigCommerce:["bigcommerce","bigcommerceId"],ShipStation:["shipstation","shipstationId"],Amazon:["amazon","amazonId"],Walmart:["walmart","walmartId"],Magento:["magento","magentoId"],Square:["square","squareId"],Wix:["wix","wixId"],Squarespace:["squarespace","squarespaceId"],Etsy:["etsy","etsyId"],eBay:["ebay","ebayId"],Ordoro:["ordoro","ordoroId"]};
+      const m=ord&&SRC[ord.source];
+      if(m){ const c=connectorOf(m[0]); const creds=(settings.conn||{})[m[0]];
+        if(c&&creds&&connConnected(settings,c)){
+          connectorPushTracking(c,creds,{platformId:ord[m[1]],tracking:rec.tracking,carrier:rec.carrier,lineItemIds:ord.lineItemIds,lines:ord.lines,version:ord.squareVersion}).then(res=>{
+            if(res&&res.ok){ setOrders(o=>o.map(x=>x.id===orderId?{...x,platformFulfilled:true}:x)); }
+            else { logEmail&&logEmail({to:"system",subject:ord.source+" fulfillment failed: "+((res&&res.error)||"unknown"),type:"System"}); }
+          });
+        }
+      }
+    }
     if(settings.notify.shipped&&rec.recipient?.name) logEmail({to:(rec.recipient?.email)||"customer@example.com",subject:`Your ${settings.company} order has shipped ☁️`,type:"Shipped"});
     addLedger({type:"Shipping charge",ref:rec.reference||rec.tracking,amount:-(rec.sell||0)});
   };
@@ -718,7 +857,7 @@ export default function App(){
           {tab==="ledger"&&<Ledger ledger={ledger} addLedger={addLedger}/>}
           {tab==="addresses"&&<AddressBook settings={settings} setSettings={setSettings}/>}
           {tab==="admin"&&isAdmin&&<AdminPortal clients={clients} setClients={setClients} users={users} setUsers={setUsers} shipments={shipments} orders={orders} ledger={ledger} currentUser={currentUser} settings={settings} setSettings={setSettings} brand={brand}/>}
-          {tab==="settings"&&<Settings settings={settings} setSettings={setSettings} accounts={accounts} setAccounts={setAccounts} clients={clients} setClients={setClients} rules={rules} setRules={setRules} emails={emails} shipments={shipments} setShipments={setShipments} manifests={manifests} setManifests={setManifests} client={client}/>}
+          {tab==="settings"&&<Settings settings={settings} setSettings={setSettings} orders={orders} setOrders={setOrders} accounts={accounts} setAccounts={setAccounts} clients={clients} setClients={setClients} rules={rules} setRules={setRules} emails={emails} shipments={shipments} setShipments={setShipments} manifests={manifests} setManifests={setManifests} client={client}/>}
         </main>
       </div>
     </div>
@@ -1229,14 +1368,30 @@ function Orders({orders,setOrders,goShip,client,settings,onShipped}){
     return String(b.id).localeCompare(String(a.id)); // date / newest
   });
   const ship=(o)=>goShip({receiver:{name:o.customer,company:o.company,zip:o.zip,state:o.state,city:o.city,address1:o.address1,phone:o.phone,email:o.email},weight:o.weight,reference:o.name,fromOrderId:o.id});
+  const [syncing,setSyncing]=useState(false);
+  const [syncMsg,setSyncMsg]=useState(null);
+  const syncShopify=async()=>{
+    if(!shopifyConnected(settings))return; setSyncing(true);setSyncMsg(null);
+    const res=await shopifySyncOrders(settings.shopifyConn);
+    setSyncing(false);
+    if(res&&res.ok){
+      const have=new Set(orders.map(o=>o.shopifyId).filter(Boolean));
+      const fresh=(res.orders||[]).filter(o=>!have.has(o.shopifyId));
+      if(fresh.length)setOrders(p=>[...fresh,...p]);
+      setSyncMsg({ok:`${fresh.length} new order${fresh.length===1?"":"s"} pulled`});
+    } else setSyncMsg({err:(res&&res.error)||"Sync failed"});
+    setTimeout(()=>setSyncMsg(null),4000);
+  };
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex bg-stone-100 rounded-lg p-0.5 text-sm">{["all","unfulfilled","fulfilled"].map(f=><button key={f} onClick={()=>setFilter(f)} className={`px-3 py-1.5 rounded-md capitalize ${filter===f?"bg-white shadow-sm text-stone-900 font-medium":"text-stone-500"}`}>{f}</button>)}</div>
         <div className="flex-1 relative min-w-0"><Search className="w-4 h-4 absolute left-2.5 top-2.5 text-stone-400"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search orders" className="w-full bg-white border border-stone-200 rounded-lg pl-8 pr-3 py-2 text-sm outline-none focus:border-[#0099FF]"/></div>
         <div className="flex items-center gap-1.5 text-sm"><span className="text-stone-500">Sort</span><select value={sort} onChange={e=>setSort(e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1.5 text-sm outline-none focus:border-[#0099FF]"><option value="date">Newest</option><option value="total">Order total</option><option value="customer">Customer</option><option value="state">Dest. state</option><option value="weight">Weight</option><option value="source">Source</option></select></div>
+        {shopifyConnected(settings)&&<button onClick={syncShopify} disabled={syncing} className="flex items-center gap-1.5 text-sm border border-[#95BF47]/40 bg-[#95BF47]/10 text-[#5E8E3E] rounded px-3 py-2 font-medium hover:bg-[#95BF47]/20 disabled:opacity-40">{syncing?<><Loader2 className="w-4 h-4 animate-spin"/>Syncing…</>:<><ShoppingBag className="w-4 h-4"/>Sync Shopify</>}</button>}
         <button onClick={()=>setAdding(true)} className="flex items-center gap-1.5 text-sm bg-stone-900 text-white rounded px-3 py-2 font-medium hover:bg-stone-800"><Plus className="w-4 h-4"/>New order</button>
       </div>
+      {syncMsg&&<div className={`text-[12px] rounded px-3 py-2 flex items-center gap-1.5 ${syncMsg.err?"bg-rose-50 text-rose-600 border border-rose-200":"bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>{syncMsg.err?<AlertTriangle className="w-3.5 h-3.5"/>:<CheckCircle2 className="w-3.5 h-3.5"/>}{syncMsg.err||syncMsg.ok}</div>}
       {adding&&<NewOrderForm onClose={()=>setAdding(false)} onCreate={(o)=>{setOrders(p=>[o,...p]);setAdding(false);}}/>}
       <div className="border border-stone-200 rounded-lg overflow-hidden bg-white divide-y divide-stone-100">
         {sorted.length===0&&<div className="p-8 text-center text-sm text-stone-400">No orders.</div>}
@@ -1950,7 +2105,7 @@ function CheckoutRates({settings,setSettings,client}){
 }
 
 /* ════════ SETTINGS ════════ */
-function Settings({settings,setSettings,accounts,setAccounts,clients,setClients,rules,setRules,emails,shipments,setShipments,manifests,setManifests,client}){
+function Settings({settings,setSettings,orders,setOrders,accounts,setAccounts,clients,setClients,rules,setRules,emails,shipments,setShipments,manifests,setManifests,client}){
   const [sec,setSec]=useState("carriers");
   const secs=[["carriers","Carrier accounts",Plug],["boxes","Package sizes",Boxes],["boxlogic","Box logic",Package],["printer","Printer settings",Printer],["checkout","Checkout rates",ShoppingBag],["manifests","Manifests",FileText],["reports","Reports",TrendingUp],["automation","Automation rules",Zap],["notifications","Email automation",Mail],["clients","Clients & markup",Users],["billing","Billing",CreditCard],["integrations","Integrations",Layers],["subscription","Subscription",Star],["company","Company",Building2]];
   return (
@@ -1968,7 +2123,7 @@ function Settings({settings,setSettings,accounts,setAccounts,clients,setClients,
         {sec==="notifications"&&<Notifications settings={settings} setSettings={setSettings} emails={emails}/>}
         {sec==="clients"&&<Clients clients={clients} setClients={setClients}/>}
         {sec==="billing"&&<Billing settings={settings} setSettings={setSettings}/>}
-        {sec==="integrations"&&<Integrations settings={settings} setSettings={setSettings}/>}
+        {sec==="integrations"&&<Integrations settings={settings} setSettings={setSettings} orders={orders} setOrders={setOrders}/>}
         {sec==="subscription"&&<Subscription settings={settings} setSettings={setSettings}/>}
         {sec==="company"&&<Company settings={settings} setSettings={setSettings}/>}
       </div>
@@ -2184,17 +2339,123 @@ function AddressBook({settings,setSettings}){
     </div>
   </div>);
 }
-function Integrations({settings,setSettings}){
-  return (<div className="max-w-xl space-y-3">
-    <p className="text-sm text-stone-500">Connect stores so orders flow into Ship and Orders automatically.</p>
-    <div className="border border-stone-200 rounded-lg bg-white p-4 flex items-center gap-3">
-      <div className="w-9 h-9 rounded bg-stone-100 flex items-center justify-center"><ShoppingBag className="w-4 h-4 text-stone-600"/></div>
-      <div className="flex-1"><div className="font-medium">Shopify</div><div className="text-[11px] text-stone-400 font-mono">sparkle-in-pink.myshopify.com</div></div>
-      {settings.shopify?<Badge tone="green">connected</Badge>:<button onClick={()=>setSettings({...settings,shopify:true})} className="text-sm bg-stone-900 text-white rounded px-3 py-1.5">Connect</button>}
+function ConnectorModal({c,settings,setSettings,orders,setOrders,onClose}){
+  const saved=(settings.conn||{})[c.id]||{};
+  const [form,setForm]=useState(()=>{const f={};(c.fields||[]).forEach(([k])=>{f[k]=saved[k]||"";});if(c.id==="square"&&!f.env)f.env="production";if(c.id==="amazon"&&!f.marketplaceId)f.marketplaceId="ATVPDKIKX0DER";return f;});
+  const [shopId,setShopId]=useState(saved.shopId||"");
+  const [busy,setBusy]=useState(false);const [msg,setMsg]=useState(null);
+  const connected=connConnected(settings,c);
+  const store=(obj)=>setSettings(p=>({...p,conn:{...(p.conn||{}),[c.id]:{...(p.conn||{})[c.id],...obj}}}));
+  const saveToken=()=>{ const miss=(c.fields||[]).filter(([k])=>!["channelId","env","marketplaceId"].includes(k)&&!String(form[k]||"").trim()).map(([,l])=>l); if(miss.length){setMsg({err:"Fill in: "+miss.join(", ")});return;} store(form); setMsg({ok:"Saved. You can sync now."}); };
+  const startOAuth=()=>{ window.location.href=fn(c.endpoint); };
+  const saveShopId=()=>{ if(!shopId.trim()){setMsg({err:"Enter your numeric Shop ID"});return;} store({shopId:shopId.trim()}); setMsg({ok:"Shop ID saved."}); };
+  const disconnect=()=>{ setSettings(p=>{const n={...p,conn:{...(p.conn||{})}};delete n.conn[c.id];return n;}); setMsg(null); onClose(); };
+  const downloadQwc=()=>{ window.open(fn(c.endpoint)+"?qwc=1","_blank"); };
+  const sync=async()=>{
+    setBusy(true);setMsg(null);
+    const creds={...((settings.conn||{})[c.id]||{})};
+    const res=await connectorSyncOrders(c,creds);
+    setBusy(false);
+    if(res&&res.ok){
+      const existing=new Set((orders||[]).map(o=>o.id));
+      const fresh=(res.orders||[]).filter(o=>!existing.has(o.id));
+      if(setOrders&&fresh.length)setOrders(o=>[...fresh,...o]);
+      setMsg({ok:`Synced ${(res.orders||[]).length} order${(res.orders||[]).length===1?"":"s"} · ${fresh.length} new`});
+    } else setMsg({err:(res&&res.error)||"Sync failed"});
+  };
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden shadow-2xl" onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200">
+          <div className="flex items-center gap-2"><div className={`w-7 h-7 rounded flex items-center justify-center ${c.tint}`}><Plug className="w-3.5 h-3.5"/></div><div className="font-semibold text-stone-800">{c.name}</div>{connected&&<Badge tone="green">connected</Badge>}</div>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-700"><X className="w-5 h-5"/></button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-1.5">Setup steps</div>
+            <ol className="space-y-1.5">
+              {c.instr.map((s,i)=><li key={i} className="flex gap-2 text-[13px] text-stone-600"><span className="shrink-0 w-4 h-4 rounded-full bg-stone-200 text-stone-600 text-[10px] flex items-center justify-center font-semibold mt-0.5">{i+1}</span><span>{s}</span></li>)}
+            </ol>
+          </div>
+          {c.env&&<div className="text-[11px] bg-amber-50 border border-amber-200 text-amber-700 rounded px-2 py-1.5">Requires these Netlify env vars: <b>{c.env.join(", ")}</b>. Ask your admin to set them (or share the keys and they’ll be added).</div>}
+
+          {c.auth==="token"&&(<div className="space-y-2 pt-1">
+            {(c.fields||[]).map(([k,label,ph])=>(<div key={k}><div className="text-[10px] uppercase tracking-widest text-stone-500 mb-1">{label}</div><Input value={form[k]||""} onChange={e=>setForm({...form,[k]:e.target.value})} placeholder={ph}/></div>))}
+            <button onClick={saveToken} className="text-sm bg-stone-900 text-white rounded px-4 py-2 font-medium hover:bg-stone-800 flex items-center gap-1.5"><Check className="w-4 h-4"/>Save credentials</button>
+          </div>)}
+
+          {c.auth==="oauth"&&(<div className="pt-1 space-y-2">
+            <button onClick={startOAuth} className="text-sm bg-stone-900 text-white rounded px-4 py-2 font-medium hover:bg-stone-800 flex items-center gap-1.5"><Plug className="w-4 h-4"/>Connect with {c.name}</button>
+            {c.postShopId&&<div className="pt-1"><div className="text-[10px] uppercase tracking-widest text-stone-500 mb-1">Etsy Shop ID (after connecting)</div><div className="flex gap-2"><Input value={shopId} onChange={e=>setShopId(e.target.value)} placeholder="e.g. 12345678"/><button onClick={saveShopId} className="text-sm border border-stone-200 rounded px-3 hover:bg-stone-50">Save</button></div></div>}
+          </div>)}
+
+          {c.auth==="qwc"&&(<div className="pt-1"><button onClick={downloadQwc} className="text-sm bg-stone-900 text-white rounded px-4 py-2 font-medium hover:bg-stone-800 flex items-center gap-1.5"><Download className="w-4 h-4"/>Download .qwc file</button></div>)}
+
+          {msg&&<div className={`text-[12px] rounded px-2 py-1.5 flex items-center gap-1.5 ${msg.err?"bg-rose-50 text-rose-600 border border-rose-200":"bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>{msg.err?<AlertTriangle className="w-3.5 h-3.5"/>:<CheckCircle2 className="w-3.5 h-3.5"/>}{msg.err||msg.ok}</div>}
+        </div>
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-stone-200">
+          <div>{connected&&<button onClick={disconnect} className="text-sm border border-stone-200 text-stone-500 rounded px-3 py-2 hover:bg-stone-50">Disconnect</button>}</div>
+          {c.orders&&connected&&<button onClick={sync} disabled={busy} className="text-sm bg-[#0086E0] text-white rounded px-4 py-2 font-medium hover:bg-[#0072BE] disabled:opacity-40 flex items-center gap-1.5">{busy?<><Loader2 className="w-4 h-4 animate-spin"/>Syncing…</>:<><RotateCcw className="w-4 h-4"/>Sync orders now</>}</button>}
+        </div>
+      </div>
     </div>
-    {["WooCommerce","Amazon","eBay","Etsy"].map(n=>(
-      <div key={n} className="border border-stone-200 rounded-lg bg-white p-4 flex items-center gap-3 opacity-80"><div className="w-9 h-9 rounded bg-stone-100"/><div className="flex-1 font-medium text-stone-600">{n}</div><button className="text-sm bg-stone-200 text-stone-600 rounded px-3 py-1.5">Connect</button></div>
-    ))}
+  );
+}
+function Integrations({settings,setSettings,orders,setOrders}){
+  const conn=settings.shopifyConn;
+  const connected=shopifyConnected(settings);
+  const [shop,setShop]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [msg,setMsg]=useState(null);
+  const [active,setActive]=useState(null); // connector id whose modal is open
+  const normShop=(v)=>{let s=String(v||"").trim().toLowerCase().replace(/^https?:\/\//,"").replace(/\/.*$/,"");if(s&&!s.includes("."))s=s+".myshopify.com";return s;};
+  const connect=()=>{const s=normShop(shop);if(!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(s)){setMsg({err:"Enter your store like mystore.myshopify.com"});return;}window.location.href=`${SHOPIFY_AUTH}?shop=${encodeURIComponent(s)}`;};
+  const disconnect=()=>{ setSettings(p=>{const n={...p};delete n.shopifyConn;return n;}); setMsg(null); };
+  const sync=async()=>{
+    if(!connected)return; setBusy(true);setMsg(null);
+    const res=await shopifySyncOrders(conn);
+    setBusy(false);
+    if(res&&res.ok){
+      const existing=new Set((orders||[]).map(o=>o.shopifyId).filter(Boolean));
+      const fresh=(res.orders||[]).filter(o=>!existing.has(o.shopifyId));
+      if(setOrders&&fresh.length) setOrders(o=>[...fresh,...o]);
+      setMsg({ok:`Synced ${res.orders.length} open order${res.orders.length===1?"":"s"} · ${fresh.length} new`});
+    } else setMsg({err:(res&&res.error)||"Sync failed"});
+  };
+  const activeC=active?connectorOf(active):null;
+  return (<div className="max-w-3xl space-y-3">
+    <p className="text-sm text-stone-500">Connect a platform so orders flow into Orders automatically, and tracking pushes back when you print a label. Click any tile for exact setup steps.</p>
+    {/* Shopify (live) */}
+    <div className="border border-stone-200 rounded-lg bg-white p-4">
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded bg-[#95BF47]/15 flex items-center justify-center"><ShoppingBag className="w-4 h-4 text-[#5E8E3E]"/></div>
+        <div className="flex-1 min-w-0"><div className="font-medium">Shopify</div><div className="text-[11px] text-stone-400 font-mono truncate">{connected?conn.shop:"Not connected"}</div></div>
+        {connected?<Badge tone="green">connected</Badge>:null}
+      </div>
+      {connected?(
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button onClick={sync} disabled={busy} className="text-sm bg-stone-900 text-white rounded px-3 py-2 font-medium hover:bg-stone-800 disabled:opacity-40 flex items-center gap-1.5">{busy?<><Loader2 className="w-4 h-4 animate-spin"/>Syncing…</>:<><RotateCcw className="w-4 h-4"/>Sync orders now</>}</button>
+          <button onClick={disconnect} className="text-sm border border-stone-200 text-stone-500 rounded px-3 py-2 hover:bg-stone-50">Disconnect</button>
+        </div>
+      ):(
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <div className="flex-1 min-w-[220px]"><div className="text-[10px] uppercase tracking-widest text-stone-500 mb-1">Store domain</div><Input value={shop} onChange={e=>setShop(e.target.value)} placeholder="mystore.myshopify.com"/></div>
+          <button onClick={connect} className="text-sm bg-stone-900 text-white rounded px-4 py-2 font-medium hover:bg-stone-800 flex items-center gap-1.5"><Plug className="w-4 h-4"/>Connect</button>
+        </div>
+      )}
+      {msg&&<div className={`mt-2 text-[12px] rounded px-2 py-1.5 flex items-center gap-1.5 ${msg.err?"bg-rose-50 text-rose-600 border border-rose-200":"bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>{msg.err?<AlertTriangle className="w-3.5 h-3.5"/>:<CheckCircle2 className="w-3.5 h-3.5"/>}{msg.err||msg.ok}</div>}
+    </div>
+    {/* All other connectors */}
+    <div className="grid sm:grid-cols-2 gap-2">
+      {CONNECTORS.map(c=>{ const isOn=connConnected(settings,c); return (
+        <button key={c.id} onClick={()=>setActive(c.id)} className="text-left border border-stone-200 rounded-lg bg-white p-3 flex items-center gap-3 hover:border-stone-300 hover:shadow-sm transition">
+          <div className={`w-9 h-9 rounded flex items-center justify-center ${c.tint}`}><Plug className="w-4 h-4"/></div>
+          <div className="flex-1 min-w-0"><div className="font-medium text-stone-700 text-sm truncate">{c.name}</div><div className="text-[10px] text-stone-400">{isOn?"Connected":(c.orders?"Orders + tracking":"Records")}</div></div>
+          {isOn?<Badge tone="green">on</Badge>:<span className="text-[11px] text-[#0086E0] font-medium flex items-center gap-1">Connect<ChevronRight className="w-3.5 h-3.5"/></span>}
+        </button>
+      );})}
+    </div>
+    {activeC&&<ConnectorModal c={activeC} settings={settings} setSettings={setSettings} orders={orders} setOrders={setOrders} onClose={()=>setActive(null)}/>}
   </div>);
 }
 function Billing({settings,setSettings}){
