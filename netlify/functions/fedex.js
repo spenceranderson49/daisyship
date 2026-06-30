@@ -46,6 +46,8 @@ async function transit(c, body, tk) {
   const today = new Date().toISOString().slice(0, 10);
   const payload = {
     accountNumber: { value: c.account },
+    // FedEx returns transit/commit data ONLY when asked here (per FedEx Rates & Transit Times API spec)
+    rateRequestControlParameters: { returnTransitTimes: true },
     requestedShipment: {
       shipper: { address: { postalCode: S(body.fromZip), countryCode: body.fromCountry || "US", stateOrProvinceCode: S(body.fromState) || undefined } },
       recipient: { address: { postalCode: S(body.toZip), countryCode: body.toCountry || "US", residential: !!body.residential } },
@@ -54,8 +56,6 @@ async function transit(c, body, tk) {
       rateRequestType: ["LIST", "ACCOUNT"],
       requestedPackageLineItems: (Array.isArray(body.pieces) && body.pieces.length ? body.pieces : [{ weight: body.weight || 1 }]).map((p) => ({ weight: { units: "LB", value: Number(p.weight || p.wt || 1) } })),
     },
-    // ask FedEx for delivery commitments / transit times
-    returnTransitTimes: true,
   };
   const r = await fetch(c.base + "/rate/v1/rates/quotes", {
     method: "POST",
