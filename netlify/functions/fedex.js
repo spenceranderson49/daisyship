@@ -79,7 +79,7 @@ async function transit(c, body, tk) {
     const deliveryDate = fmtDate(dd.dayCxsFormat || dd.date || op.deliveryDate || op.commitDate || commit.commitTimestamp);
     return { serviceType: s.serviceType, serviceName: s.serviceName || s.serviceType, transitDays: days, transitLabel: transitEnum ? String(transitEnum).replace(/_/g, " ").toLowerCase() : null, deliveryDate, deliveryDay: dd.dayOfWeek || op.deliveryDay || null };
   }).filter((x) => x.serviceType);
-  return { ok: true, _fn: "addr-v12", services, _sample: details[0] || null };
+  return { ok: true, _fn: "addr-v18", services, _sample: details[0] || null };
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -142,9 +142,15 @@ async function validateDeliverability(c, a, tk) {
   const lines = [a.address1, a.address2].filter(Boolean).map(S);
   const payload = { addressesToValidate: [{ address: { streetLines: lines.length ? lines : [""], city: S(a.city), stateOrProvinceCode: S(a.state), postalCode: S(a.zip), countryCode: a.country || "US" } }] };
   let r, t, d = null;
+  const doFetch = async () => {
+    const rr = await fetch(c.base + "/address/v1/addresses/resolve", { method: "POST", headers: { "Authorization": "Bearer " + tk, "Content-Type": "application/json", "X-locale": "en_US" }, body: JSON.stringify(payload) });
+    const tt = await rr.text(); let dd = null; try { dd = JSON.parse(tt); } catch {}
+    return { rr, tt, dd };
+  };
   try {
-    r = await fetch(c.base + "/address/v1/addresses/resolve", { method: "POST", headers: { "Authorization": "Bearer " + tk, "Content-Type": "application/json", "X-locale": "en_US" }, body: JSON.stringify(payload) });
-    t = await r.text(); try { d = JSON.parse(t); } catch {}
+    let out = await doFetch();
+    if (out.rr.status >= 500) { await new Promise((res) => setTimeout(res, 400)); out = await doFetch(); } // one retry on FedEx 5xx
+    r = out.rr; t = out.tt; d = out.dd;
   } catch (e) { return { deliverable: null, normalized: null, attrs: {}, error: "address fetch failed" }; }
   if (!r.ok) return { deliverable: null, normalized: null, attrs: {}, error: "address HTTP " + r.status };
   const ra = (d && d.output && d.output.resolvedAddresses && d.output.resolvedAddresses[0]) || null;
@@ -176,7 +182,7 @@ async function address(c, body, tk) {
   const classification = (vc === "BUSINESS" || vc === "RESIDENTIAL") ? vc : cls.classification;
   return {
     ok: true,
-    _fn: "addr-v12",
+    _fn: "addr-v18",
     deliverable: val.deliverable,                       // true / false / null(=couldn't check)
     classification,                                     // RESIDENTIAL | BUSINESS | UNKNOWN
     residential: classification === "RESIDENTIAL",
