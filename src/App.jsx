@@ -9,7 +9,7 @@ const FW_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfIAAAAsCAYAAACe0jo
 
 
 const DEFAULT_BRAND={name1:"Shipping",name2:"Cloud",primary:FW_BLUE,dark:FW_DARK,partnerLabel:"by",logo:FW_LOGO,showLogo:true};
-const BUILD_TAG="addr-v12";
+const BUILD_TAG="addr-v13";
 
 /* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
@@ -867,7 +867,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
         <div className="relative grid lg:grid-cols-2 gap-4">
           <AddressCard title="Sender" data={sender} set={setSender} addresses={settings.addresses}/>
           <button onClick={swap} title="Swap" className="hidden lg:flex absolute left-1/2 top-6 -translate-x-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-stone-200 border border-stone-300 hover:bg-stone-300 text-stone-700"><ArrowLeftRight className="w-4 h-4"/></button>
-          <AddressCard title="Receiver" data={receiver} set={setReceiver} required residential={residential} setResidential={(v)=>{setResTouched(true);setRes(v);}} addresses={settings.addresses} onPick={(a)=>{ if(a&&a.acctNum){setBillTo("third");setThirdAcct(a.acctNum);} else {setBillTo(settings.defaultBillTo||"sender");setThirdAcct("");} }}/>
+          <AddressCard title="Receiver" data={receiver} set={setReceiver} required addresses={settings.addresses} onPick={(a)=>{ if(a&&a.acctNum){setBillTo("third");setThirdAcct(a.acctNum);} else {setBillTo(settings.defaultBillTo||"sender");setThirdAcct("");} }}/>
         </div>
         {billTo==="third"&&thirdAcct&&<div className="flex flex-wrap items-center gap-2 text-xs -mt-1">
           <span className="flex items-center gap-1.5 text-[#006FBF] bg-[#E6F4FF] border border-[#99D6FF] rounded-lg px-3 py-1.5"><CreditCard className="w-3.5 h-3.5"/>Auto-billing to third-party account <b className="font-mono">{thirdAcct}</b><button onClick={()=>{setBillTo("sender");setThirdAcct("");}} className="ml-1 text-[#0086E0] hover:text-[#006FBF] underline">bill sender instead</button></span>
@@ -880,7 +880,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
               {/* residential / commercial — the primary signal */}
               {verify.type
                 ?<span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border ${verify.type==="Residential"?"text-[#006FBF] bg-[#E6F4FF] border-[#99D6FF]":"text-stone-700 bg-stone-100 border-stone-200"}`} title={"FedEx classifies this as a "+verify.type.toLowerCase()+" address"}>{verify.type==="Residential"?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{verify.type}</span>
-                :<span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border text-stone-500 bg-stone-50 border-stone-200" title="FedEx didn’t return a residential/commercial classification — set it with the toggle on the receiver card">{residential?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{residential?"Residential":"Commercial"} · set below</span>}
+                :<span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium border text-stone-400 bg-stone-50 border-stone-200" title="FedEx didn’t return a residential/commercial classification for this address">Type not classified by FedEx</span>}
               {/* deliverability */}
               {verify.deliverable===true&&<span className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 font-medium" title={verify.normalized&&verify.normalized.city?"FedEx confirms a deliverable address — "+(Array.isArray(verify.normalized.streetLines)?verify.normalized.streetLines.join(" "):"")+" "+verify.normalized.city+", "+verify.normalized.state+" "+verify.normalized.zip:"FedEx confirms this is a deliverable address"}><CheckCircle2 className="w-3.5 h-3.5"/>Deliverable</span>}
               {verify.deliverable===false&&<span className="flex items-center gap-1.5 text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 font-medium" title={verify.issues?verify.issues.join(" · "):"FedEx couldn’t confirm this address"}><AlertTriangle className="w-3.5 h-3.5"/>{verify.issues?verify.issues.join(" · "):"Address not found"}</span>}
