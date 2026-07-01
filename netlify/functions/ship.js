@@ -79,6 +79,24 @@ exports.handler = async (event) => {
     const c = creds(body.account || {});
     if (!c.apiKey || !c.customerId) return J({ ok: false, error: "Missing England API key or customer ID." });
 
+    /* ---- action: diag — what can this key actually access? ---- */
+    if (body.action === "diag") {
+      const out = { customerId: c.customerId };
+      async function probe(path) {
+        try {
+          const r = await req(c.base + path, { headers: authHeaders(c.apiKey) });
+          const t = await r.text(); let d = null; try { d = JSON.parse(t); } catch {}
+          return { status: r.status, ok: r.ok, data: d, raw: r.ok ? undefined : (t ? t.slice(0, 200) : "") };
+        } catch (e) { return { status: 0, ok: false, raw: (e && e.message) || "error" }; }
+      }
+      const pa = await probe("/restapi/v1/customers/" + encodeURIComponent(c.customerId) + "/provider-accounts");
+      const accts = (pa.data && pa.data.providerAccounts) || [];
+      out.providerAccounts = { status: pa.status, ok: pa.ok, count: accts.length, providers: accts.map((a) => a.providerCode), accounts: accts.map((a) => ({ id: a.id, providerCode: a.providerCode, accountNumber: (a.accountFields && a.accountFields.accountNumber) || a.accountNumber || null })), raw: pa.raw };
+      const sv = await probe("/restapi/v1/customers/" + encodeURIComponent(c.customerId) + "/services");
+      out.services = { status: sv.status, ok: sv.ok, raw: sv.raw };
+      return J({ ok: true, diag: out });
+    }
+
     /* ---- action: status (app polls this after shipping) ---- */
     if (body.action === "status") {
       const orderId = S(body.orderId);
