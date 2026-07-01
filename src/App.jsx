@@ -9,7 +9,7 @@ const FW_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfIAAAAsCAYAAACe0jo
 
 
 const DEFAULT_BRAND={name1:"Shipping",name2:"Cloud",primary:FW_BLUE,dark:FW_DARK,partnerLabel:"by",logo:FW_LOGO,showLogo:true};
-const BUILD_TAG="addr-v31";
+const BUILD_TAG="addr-v33";
 
 /* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
@@ -1060,6 +1060,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
       shippingService:q.label,shippingTotal:String(q.sell??q.cost??"0.00"),contentDescription:"Merchandise",
       signatureOption:sigOption,saturdayDelivery:saturday,insuranceAmount:insurance||null,residential,
       billingParty:billTo==="third"?"third_party":(billTo==="receiver"?"receiver":"sender"),billingAccount:billTo==="third"?(thirdAcct||null):null,
+      providerAccountId:eng.providerAccountId||null,
       sender:{...sender,country:sender.country||"US"},receiver:{...receiver,country:receiver.country||"US"},
       pieces:pieces.map(p=>({weight:pw(p),length:p.L,width:p.W,height:p.H,declaredValue:intl?(p.value||null):null}))};
     const res=await shipCall({action:"ship",account:acctOf(eng),order});
@@ -2570,6 +2571,26 @@ function CarrierAccounts({accounts,setAccounts,settings,setSettings}){
   const eng=settings.england||{enabled:false,base:"https://englandship.rocksolidinternet.com",apiKey:"",customerId:"",integrationId:"",account:""};
   const setEng=(patch)=>setSettings({...settings,england:{...eng,...patch}});
   const [test,setTest]=useState(null); // {ok,msg,sample}
+  const [diag,setDiag]=useState(null);
+  const runDiag=async()=>{
+    setDiag({loading:true});
+    const res=await shipCall({action:"diag",account:acctOf({...eng,enabled:true})});
+    if(res&&res.ok&&res.diag){
+      const d=res.diag; const pa=d.providerAccounts||{};
+      const providers=(pa.providers||[]);
+      const accounts=pa.accounts||[];
+      const fedexAcct=accounts.find(a=>String(a.providerCode).toLowerCase()==="fedex");
+      const hasFedex=!!fedexAcct||providers.includes("fedex");
+      if(fedexAcct&&fedexAcct.id) setEng({providerAccountId:fedexAcct.id,providerAccounts:accounts});
+      if(pa.ok){
+        setDiag({ok:hasFedex,carrier:hasFedex,msg:hasFedex
+          ?`FedEx account is provisioned ✓${fedexAcct&&fedexAcct.accountNumber?" (#"+fedexAcct.accountNumber+")":""}${fedexAcct&&fedexAcct.id?" · saved for booking":""}. Booking should be permitted.`
+          :`No FedEx provider account on your customer. Providers found: ${providers.length?providers.join(", "):"none"}. Add your FedEx account in Webship → Admin Settings → Carrier/Provider Accounts, or ask England to provision it.`});
+      } else {
+        setDiag({ok:false,msg:`Provider-accounts check returned HTTP ${pa.status}. ${pa.status===403?"Your API key isn't permitted to list/book — England must enable booking on your key.":(pa.raw||"")}`});
+      }
+    } else setDiag({ok:false,msg:(res&&res.error)||"Diagnostic failed."});
+  };
   const runTest=async()=>{
     setTest({loading:true});
     const res=await getLiveRates({fromZip:settings.sender?.zip||"84003",toZip:"90210",residential:true,pieces:[{weight:3,L:12,W:9,H:4}]},{...eng,enabled:true});
@@ -2594,8 +2615,10 @@ function CarrierAccounts({accounts,setAccounts,settings,setSettings}){
         <p className="text-[11px] text-stone-400 -mt-1">The Integration ID enables real label printing. In Webship: gear/settings → eCommerce Integrations → Add → Rest API → Save New Integration → copy the ID. Turn on auto-ship for that integration so labels book automatically.</p>
         <div className="flex flex-wrap items-center gap-3">
           <button onClick={runTest} disabled={!eng.apiKey||!eng.customerId} className="text-sm bg-stone-900 text-white rounded px-4 py-2 font-medium hover:bg-stone-800 disabled:opacity-40 flex items-center gap-1.5">{test&&test.loading?<><Loader2 className="w-4 h-4 animate-spin"/>Testing…</>:<><ShieldCheck className="w-4 h-4"/>Test connection</>}</button>
+          <button onClick={runDiag} disabled={!eng.apiKey||!eng.customerId} className="text-sm border border-stone-300 text-stone-700 rounded px-4 py-2 font-medium hover:bg-stone-50 disabled:opacity-40 flex items-center gap-1.5">{diag&&diag.loading?<><Loader2 className="w-4 h-4 animate-spin"/>Checking…</>:<><Truck className="w-4 h-4"/>Check booking access</>}</button>
           {test&&!test.loading&&<span className={`text-xs flex items-center gap-1.5 ${test.ok?"text-emerald-700":"text-[#0086E0]"}`}>{test.ok?<CheckCircle2 className="w-4 h-4"/>:<AlertTriangle className="w-4 h-4"/>}{test.msg}</span>}
         </div>
+        {diag&&!diag.loading&&<div className={`text-[12px] rounded px-3 py-2 flex items-start gap-1.5 ${diag.ok?"bg-emerald-50 text-emerald-700 border border-emerald-200":"bg-amber-50 text-amber-800 border border-amber-200"}`}>{diag.ok?<CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5"/>:<AlertTriangle className="w-4 h-4 shrink-0 mt-0.5"/>}<span>{diag.msg}</span></div>}
         {test&&!test.loading&&!test.ok&&test.detail&&<div className="text-[11px] text-stone-500 font-mono bg-stone-100 border border-stone-200 rounded p-2 break-words whitespace-pre-wrap">England said: {typeof test.detail==="string"?test.detail:JSON.stringify(test.detail)}</div>}
         <p className="text-[11px] text-stone-400">For production, store the API key as a Netlify env var (<span className="font-mono">ENGLAND_API_KEY</span>, <span className="font-mono">ENGLAND_CUSTOMER_ID</span>) instead of here, so it never ships to the browser. England authenticates with the API key + customer ID; if you only have the FedEx account number, try it as the customer ID or confirm the key with your England rep.</p>
       </div>
