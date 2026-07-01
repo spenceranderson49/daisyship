@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { Package, Truck, Users, Plug, Plus, Check, X, ChevronRight, ChevronDown, Wifi, WifiOff, Loader2, Trash2, ShoppingBag, ArrowLeftRight, Search, Calendar, Settings as Cog, Calculator, ExternalLink, Edit3, RotateCcw, MapPin, Printer, Building2, CreditCard, BarChart3, Layers, FileText, Undo2, Zap, Download, Boxes, CheckCircle2, AlertTriangle, TrendingUp, ShieldCheck, Mail, Cloud, Receipt, Wallet, Upload, Star, Send, Home, BookUser, DollarSign, ScanLine } from "lucide-react";
+import { Package, Truck, Users, Plug, Plus, Check, X, ChevronRight, ChevronDown, Wifi, WifiOff, Loader2, Trash2, ShoppingBag, ArrowLeftRight, Search, Calendar, Settings as Cog, Calculator, ExternalLink, Edit3, RotateCcw, MapPin, Printer, Building2, CreditCard, BarChart3, Layers, FileText, Undo2, Zap, Download, Boxes, CheckCircle2, AlertTriangle, TrendingUp, ShieldCheck, Mail, Cloud, Receipt, Wallet, Upload, Star, Send, Home, BookUser, DollarSign, ScanLine, Clock } from "lucide-react";
 const FW_BLUE="#0099FF";
 const FW_DARK="#111418";
 function BrandCloud({className,color}){return (
@@ -9,7 +9,7 @@ const FW_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfIAAAAsCAYAAACe0jo
 
 
 const DEFAULT_BRAND={name1:"Shipping",name2:"Cloud",primary:FW_BLUE,dark:FW_DARK,partnerLabel:"by",logo:FW_LOGO,showLogo:true};
-const BUILD_TAG="addr-v28";
+const BUILD_TAG="addr-v31";
 
 /* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
@@ -80,7 +80,7 @@ const newTracking=carrier=>carrier==="UPS"?"1Z"+Math.random().toString(36).slice
 const RATES_ENDPOINT="/.netlify/functions/quote";
 async function getLiveRates(s,england){
   if(!england||!england.enabled) return null;
-  const body={fromZip:s.fromZip,toZip:s.toZip,fromCountry:s.fromCountry||"US",toCountry:s.toCountry||"US",residential:!!s.residential,signature:!!s.signature,signatureOption:s.signatureOption||(s.signature?"direct":"none"),pieces:(s.pieces||[]).map(p=>({weight:+p.weight||1,length:+p.L||12,width:+p.W||9,height:+p.H||4})),account:{base:england.base,apiKey:england.apiKey,customerId:england.customerId}};
+  const body={carriers:s.carriers||"fedex",fromZip:s.fromZip,toZip:s.toZip,fromCountry:s.fromCountry||"US",toCountry:s.toCountry||"US",residential:!!s.residential,signature:!!s.signature,signatureOption:s.signatureOption||(s.signature?"direct":"none"),pieces:(s.pieces||[]).map(p=>({weight:+p.weight||1,length:+p.L||12,width:+p.W||9,height:+p.H||4})),account:{base:england.base,apiKey:england.apiKey,customerId:england.customerId}};
   try{
     const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),12000);
     const r=await fetch(RATES_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:ctrl.signal});
@@ -717,6 +717,8 @@ export default function App(){
   const [accounts,setAccounts]=usePersist("accounts",SEED_ACCOUNTS);
   const [orders,setOrders]=usePersist("orders",SEED_ORDERS);
   const [shipments,setShipments]=usePersist("shipments",SEED_SHIPMENTS);
+  const [pendingShips,setPendingShips]=usePersist("pendingShips",[]);
+  const [appLabel,setAppLabel]=useState(null);
   const [pickups,setPickups]=usePersist("pickups",[]);
   const [returns,setReturns]=usePersist("returns",SEED_RETURNS);
   const [manifests,setManifests]=usePersist("manifests",[]);
@@ -794,6 +796,27 @@ export default function App(){
     if(settings.notify.shipped&&rec.recipient?.name) logEmail({to:(rec.recipient?.email)||"customer@example.com",subject:`Your ${settings.company} order has shipped ☁️`,type:"Shipped"});
     addLedger({type:"Shipping charge",ref:rec.reference||rec.tracking,amount:-(rec.sell||0)});
   };
+  // record an order that pushed to England but hasn't booked yet, so we can pull its label later
+  const onPending=(entry)=>{ if(!entry||!entry.orderId)return; setPendingShips(p=>[{...entry,at:Date.now()},...p.filter(x=>x.orderId!==entry.orderId)]); };
+  // re-check England for any staged orders that have since booked; pull label + tracking into Shipments
+  const checkPendingLabels=async()=>{
+    const eng=settings.england;
+    if(!eng||!eng.integrationId||!pendingShips.length) return {checked:0,booked:0,error:eng&&eng.integrationId?null:"Connect England first"};
+    let booked=0,firstLabel=null;
+    for(const pend of [...pendingShips]){
+      let res=null; try{ res=await shipCall({action:"status",account:acctOf(eng),orderId:pend.orderId}); }catch(e){}
+      if(res&&res.booked){
+        booked++;
+        const rec={...pend.rec,tracking:res.tracking||pend.rec.tracking,bookNumber:res.bookNumber||pend.rec.bookNumber,status:"Label created",lastScan:"Label created",dayAgo:0,client:(client&&client.name)||pend.rec.client};
+        setShipments(p=>[rec,...p]);
+        setPendingShips(list=>list.filter(x=>x.orderId!==pend.orderId));
+        if(pend.orderRef) setOrders(o=>o.map(x=>x.id===pend.orderRef?{...x,status:"fulfilled",tracking:rec.tracking}:x));
+        if(res.labelPdfBase64&&!firstLabel) firstLabel={pdf:res.labelPdfBase64,tracking:rec.tracking,service:pend.service,carrier:pend.carrier};
+      }
+    }
+    if(firstLabel) setAppLabel(firstLabel);
+    return {checked:pendingShips.length,booked};
+  };
 
   const isAdmin=currentUser&&currentUser.role==="admin";
   const ALL_TABS=[["ship","Ship",Package],["orders","Orders",ShoppingBag],["shipments","Shipments",Truck],["drafts","Drafts",FileText],["returns","Returns",Undo2],["pickups","Pickups",Calendar],["batch","Batch",Layers],["invoices","Invoices",Receipt],["ledger","Ledger",Wallet],["addresses","Address Book",BookUser],["scan","Scan",ScanLine],["dashboard","Dashboard",BarChart3],["admin","Admin",ShieldCheck],["settings","Settings",Cog]];
@@ -820,6 +843,7 @@ export default function App(){
         </div>
       </header>
       {qq&&<QuickQuote onClose={()=>setQQ(false)} client={client} england={settings.england}/>}
+      {appLabel&&<LabelPreviewModal data={appLabel} onClose={()=>setAppLabel(null)}/>}
       {navOpen&&<div className="md:hidden fixed inset-0 z-40 flex" role="dialog">
         <div className="absolute inset-0 bg-stone-900/40" onClick={()=>setNavOpen(false)}/>
         <aside className="relative w-64 bg-white h-full shadow-xl overflow-y-auto">
@@ -845,11 +869,11 @@ export default function App(){
         </aside>
         <main className="flex-1 min-w-0 px-3 sm:px-6 py-4 sm:py-6">
           {tab==="dashboard"&&<Dashboard shipments={shipments} orders={orders} returns={returns} goTab={setTab}/>}
-          {tab==="ship"&&<Ship client={client} accounts={accounts} orders={orders} settings={settings} setSettings={setSettings} rules={rules} drafts={drafts} setDrafts={setDrafts} prefill={prefill} clearPrefill={()=>setPrefill(null)} onShipped={onShipped} logEmail={logEmail} onQuickQuote={()=>setQQ(true)}/>}
+          {tab==="ship"&&<Ship client={client} accounts={accounts} orders={orders} settings={settings} setSettings={setSettings} rules={rules} drafts={drafts} setDrafts={setDrafts} prefill={prefill} clearPrefill={()=>setPrefill(null)} onShipped={onShipped} onPending={onPending} logEmail={logEmail} onQuickQuote={()=>setQQ(true)}/>}
           {tab==="scan"&&<Scan orders={orders} goShip={goShip} goTab={setTab}/>}
           {tab==="orders"&&<Orders orders={orders} setOrders={setOrders} goShip={goShip} client={client} settings={settings} onShipped={onShipped}/>}
           {tab==="batch"&&<Batch orders={orders} setOrders={setOrders} client={client} rules={rules} onShipped={onShipped}/>}
-          {tab==="shipments"&&<Shipments shipments={shipments} setShipments={setShipments} goShip={goShip}/>}
+          {tab==="shipments"&&<Shipments shipments={shipments} setShipments={setShipments} goShip={goShip} pendingShips={pendingShips} onCheckLabels={checkPendingLabels}/>}
           {tab==="drafts"&&<Drafts drafts={drafts} setDrafts={setDrafts} goShip={goShip}/>}
           {tab==="returns"&&<Returns returns={returns} setReturns={setReturns} orders={orders} settings={settings} logEmail={logEmail}/>}
           {tab==="pickups"&&<Pickups pickups={pickups} setPickups={setPickups} settings={settings}/>}
@@ -865,7 +889,7 @@ export default function App(){
 }
 
 /* ════════ SHIP ════════ */
-function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDrafts,prefill,clearPrefill,onShipped,logEmail,onQuickQuote}){
+function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDrafts,prefill,clearPrefill,onShipped,onPending,logEmail,onQuickQuote}){
   const empty={country:"United States",name:"",company:"",zip:"",state:"",city:"",address1:"",address2:"",address3:"",phone:"",email:""};
   const [sender,setSender]=useState({country:"United States",...settings.sender,address2:"STE A",address3:""});
   const [receiver,setReceiver]=useState(empty);
@@ -902,7 +926,8 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
   const setPiece=(i,patch)=>setPieces(ps=>ps.map((p,j)=>j===i?{...p,...patch}:p));
   const addPiece=()=>setPieces(ps=>[...ps,{...(ps[ps.length-1]||{weight:"",L:"",W:"",H:""})}]);
   const delPiece=(i)=>setPieces(ps=>ps.length>1?ps.filter((_,j)=>j!==i):ps);
-  const totalWeight=pieces.reduce((a,p)=>a+(+p.weight||0),0);
+  const pw=(p)=>Math.round(((+p.weight||0)+(+p.oz||0)/16)*1000)/1000;
+  const totalWeight=Math.round(pieces.reduce((a,p)=>a+pw(p),0)*100)/100;
   const setLine=(i,patch)=>setCustoms(c=>({...c,lines:c.lines.map((l,j)=>j===i?{...l,...patch}:l)}));
   const addLine=()=>setCustoms(c=>({...c,lines:[...c.lines,{desc:"",hts:"",origin:"United States",qty:1,value:"",weight:""}]}));
   const delLine=(i)=>setCustoms(c=>({...c,lines:c.lines.length>1?c.lines.filter((_,j)=>j!==i):c.lines}));
@@ -955,7 +980,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
 
   const swap=()=>{const s=sender;setSender(receiver);setReceiver(s);};
   const ready=/^\d{5}/.test(receiver.zip||"")&&totalWeight>0;
-  const shipment={fromZip:sender.zip||client.origin,toZip:receiver.zip,pieces,residential,signature,signatureOption:sigOption,saturdayDelivery:saturday,intl};
+  const shipment={fromZip:sender.zip||client.origin,toZip:receiver.zip,pieces:pieces.map(p=>({...p,weight:pw(p)})),residential,signature,signatureOption:sigOption,saturdayDelivery:saturday,intl};
   // Front screen shows FedEx only (until a USPS/UPS/DAP deal is added). Blank-price skeleton before rates load.
   const FEDEX_SKELETON=[
     {key:"fedex_ground",carrier:"FedEx",label:"FedEx Ground®",cost:null},
@@ -964,7 +989,6 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
     {key:"fedex_2day",carrier:"FedEx",label:"FedEx 2Day®",cost:null},
     {key:"fedex_std",carrier:"FedEx",label:"FedEx Standard Overnight®",cost:null},
     {key:"fedex_prio",carrier:"FedEx",label:"FedEx Priority Overnight®",cost:null},
-    {key:"fedex_first",carrier:"FedEx",label:"FedEx First Overnight®",cost:null},
   ];
   const localQuotes=()=>quoteRates(shipment).filter(q=>q.carrier==="FedEx");
   const [rateSrc,setRateSrc]=useState({rates:[],live:false,loading:false,error:null});
@@ -993,10 +1017,11 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
   const quotes=useMemo(()=>{
     let rates=(rateSrc.rates||[]).filter(q=>q.carrier==="FedEx");
     let list=rates.length?rates:FEDEX_SKELETON.slice();   // skeleton (blank prices) until live rates arrive
+    list=list.filter(q=>!/first\s*overnight/i.test(q.label||""));   // never offer First Overnight
     if(addrClassified){
       list=list.filter(q=>{const k=canonSvc(q.label);if(residential&&k==="ground")return false;if(!residential&&k==="home")return false;return true;});
     }
-    return list.map(q=>{const m=fxTransit[canonSvc(q.label)];const cost=q.cost;return {...q,sell:cost!=null?Math.round(cost*(1+client.markup/100)*100)/100:null,fxDays:m?m.days:undefined,fxDate:m?m.date:undefined};})
+    return list.map(q=>{const m=fxTransit[canonSvc(q.label)];const cost=q.cost;const real=!!(m&&m.days!=null);const days=real?m.days:estTransitDays(q.label,q.zone);return {...q,sell:cost!=null?Math.round(cost*(1+client.markup/100)*100)/100:null,fxDays:days,fxDate:real?m.date:undefined,fxLive:real};})
       .sort((a,b)=>{if(a.sell==null&&b.sell==null)return 0;if(a.sell==null)return 1;if(b.sell==null)return -1;return a.sell-b.sell;});
   },[rateSrc,client.markup,fxTransit,residential,addrClassified]);
   const best=(rateSrc.live&&quotes.length&&quotes[0].sell!=null)?quotes[0].key:null;
@@ -1005,7 +1030,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
   const print=async(q)=>{
     const carrier=carrierOf(q.label);
     const eng=settings.england;
-    const canBook=eng&&eng.enabled&&eng.integrationId;
+    const canBook=eng&&eng.enabled&&eng.apiKey&&eng.customerId;
     const need=[];
     if(!receiver.name&&!receiver.company)need.push("name");
     if(!receiver.address1)need.push("address1");
@@ -1029,13 +1054,20 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
       return;
     }
     setBought(q.key);setShipStatus({state:"booking",key:q.key});
-    const order={orderId:"SC"+Date.now(),reference:reference||invoiceNo||"",orderNumber:invoiceNo||reference||"",shippingService:q.label,shippingTotal:String(q.sell??q.cost??"0.00"),contentDescription:"Merchandise",signatureOption:sigOption,saturdayDelivery:saturday,insuranceAmount:insurance||null,sender:{...sender,country:sender.country||"US"},receiver:{...receiver,country:receiver.country||"US"},pieces:pieces.map(p=>({weight:p.weight,length:p.L,width:p.W,height:p.H}))};
+    if(!q.serviceCode||!q.carrierCode){setShipStatus({state:"error",key:q.key,msg:"Enter the shipment details so live rates load, then print (need the carrier/service from the rate)."});setBought(null);return;}
+    const order={reference:reference||invoiceNo||"",orderNumber:invoiceNo||reference||"",
+      carrierCode:q.carrierCode,serviceCode:q.serviceCode,packageTypeCode:q.packageTypeCode||"",
+      shippingService:q.label,shippingTotal:String(q.sell??q.cost??"0.00"),contentDescription:"Merchandise",
+      signatureOption:sigOption,saturdayDelivery:saturday,insuranceAmount:insurance||null,residential,
+      billingParty:billTo==="third"?"third_party":(billTo==="receiver"?"receiver":"sender"),billingAccount:billTo==="third"?(thirdAcct||null):null,
+      sender:{...sender,country:sender.country||"US"},receiver:{...receiver,country:receiver.country||"US"},
+      pieces:pieces.map(p=>({weight:pw(p),length:p.L,width:p.W,height:p.H,declaredValue:intl?(p.value||null):null}))};
     const res=await shipCall({action:"ship",account:acctOf(eng),order});
     if(!res||!res.ok){setShipStatus({state:"error",key:q.key,msg:(res&&res.error)||"Booking failed"});setBought(null);return;}
     const done=(st)=>{ onShipped(buildRec(q,carrier,st),selectedOrder); if(st.labelPdfBase64){setLabelPreview({pdf:st.labelPdfBase64,tracking:st.tracking,service:q.label,carrier});} else if(st.labelError){setShipStatus({state:"label_err",key:q.key,msg:st.labelError});} setShipStatus({state:"booked",key:q.key,tracking:st.tracking}); setTimeout(()=>{setBought(null);setShipStatus(null);},2600); };
     if(res.booked){done(res);return;}
     setShipStatus({state:"pending",key:q.key,orderId:res.orderId});
-    pollLabel(eng,res.orderId,done).then(r=>{ if(r&&r.timedOut){setShipStatus({state:"pending_timeout",key:q.key});setBought(null);} });
+    pollLabel(eng,res.orderId,done).then(r=>{ if(r&&r.timedOut){ onPending&&onPending({orderId:res.orderId,rec:buildRec(q,carrier,{}),service:q.label,carrier,orderRef:selectedOrder}); setShipStatus({state:"pending_timeout",key:q.key});setBought(null);} });
   };
   const sendEmail=()=>{const to=emailTo||receiver.email||"customer@example.com";logEmail&&logEmail({to,subject:`Tracking for your ${settings.company} shipment ☁️`,type:"Shipped",body:emailMsg});setSent("email");setTimeout(()=>setSent(""),1800);};
   const sendLabel=()=>{const to=emailTo||receiver.email||"customer@example.com";logEmail&&logEmail({to,subject:`Your shipping label from ${settings.company}`,type:"Label",body:emailMsg});setSent("label");setTimeout(()=>setSent(""),1800);};
@@ -1129,10 +1161,11 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
             <div key={i} className="flex flex-wrap items-end gap-2 bg-white border border-stone-200 rounded px-2 py-2">
               <div className="text-[11px] text-stone-400 font-mono w-6">#{i+1}</div>
               <div><div className="text-[10px] uppercase tracking-widest text-stone-500">Box</div><select onChange={e=>{const pr=(settings.boxes||SEED_BOXES)[+e.target.value];if(pr)setPiece(i,{L:pr.L,W:pr.W,H:pr.H,weight:p.weight});}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-[#0099FF]"><option value="-1">Custom</option>{(settings.boxes||SEED_BOXES).map((pr,j)=><option key={pr.id} value={j}>{pr.name}</option>)}</select></div>
-              <PkgInput label="Weight (lb)" value={p.weight} onChange={e=>setPiece(i,{weight:e.target.value})} w="w-20"/>
-              <PkgInput label="L" value={p.L} onChange={e=>setPiece(i,{L:e.target.value})}/>
-              <PkgInput label="W" value={p.W} onChange={e=>setPiece(i,{W:e.target.value})}/>
-              <PkgInput label="H" value={p.H} onChange={e=>setPiece(i,{H:e.target.value})}/>
+              <PkgInput label="L" req value={p.L} onChange={e=>setPiece(i,{L:e.target.value})}/>
+              <PkgInput label="W" req value={p.W} onChange={e=>setPiece(i,{W:e.target.value})}/>
+              <PkgInput label="H" req value={p.H} onChange={e=>setPiece(i,{H:e.target.value})}/>
+              <PkgInput label="Weight (lb)" req value={p.weight} onChange={e=>setPiece(i,{weight:e.target.value})} w="w-20"/>
+              <PkgInput label="oz" value={p.oz} onChange={e=>setPiece(i,{oz:e.target.value})}/>
               {pieces.length>1&&<button onClick={()=>delPiece(i)} className="text-stone-300 hover:text-rose-500 mb-1"><Trash2 className="w-4 h-4"/></button>}
             </div>
           ))}
@@ -1182,7 +1215,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
           {shipStatus.state==="booking"&&<><Loader2 className="w-4 h-4 animate-spin"/>Booking label on your England account…</>}
           {shipStatus.state==="pending"&&<><Loader2 className="w-4 h-4 animate-spin"/>Order pushed to England — waiting for it to book and return the label…</>}
           {shipStatus.state==="booked"&&<><CheckCircle2 className="w-4 h-4"/>Label printed{shipStatus.tracking?<> · tracking <span className="font-mono">{shipStatus.tracking}</span></>:""} — moved to Shipments.</>}
-          {shipStatus.state==="pending_timeout"&&<><AlertTriangle className="w-4 h-4"/>Order is in your England account but hasn't booked yet. Turn on auto-ship in Webship, or ship it there — the label & tracking will appear in Shipments once it books.</>}
+          {shipStatus.state==="pending_timeout"&&<><AlertTriangle className="w-4 h-4"/>Order is staged in your England account. Ship it in Webship (or turn on auto-ship), then go to Shipments → “Check for labels” to pull the label & tracking here.</>}
           {shipStatus.state==="error"&&<><AlertTriangle className="w-4 h-4"/>{shipStatus.msg}</>}
         </div>}
 
@@ -1295,7 +1328,7 @@ function ServiceList({quotes,best,bought,action,label,doneLabel,showCost,ready=t
     const fxDate=q.fxDate?new Date(q.fxDate+"T00:00:00"):null;
     const days=(q.fxDays!=null?q.fxDays:(q.maxDays||q.minDays));
     const eta=ready?(fxDate||(days?addBizDays(days):null)):null;
-    const fxLive=q.fxDate||q.fxDays!=null;
+    const fxLive=q.fxLive===true;
     const sell=q.sell??q.cost;
     const factor=q.cost?sell/q.cost:1;
     let comps;
@@ -1499,10 +1532,20 @@ function OrderDetail({o,setOrders,client,settings,onShipped,goShip}){
 }
 
 /* ════════ SHIPMENTS (history) ════════ */
-function Shipments({shipments,setShipments,goShip}){
+function Shipments({shipments,setShipments,goShip,pendingShips=[],onCheckLabels}){
   const [open,setOpen]=useState(null);
   const [q,setQ]=useState("");
-  if(!shipments.length)return <Empty icon={Truck} title="No shipments yet" body="Print a label on the Ship tab and it lands here with tracking, edit & reship."/>;
+  const [checking,setChecking]=useState(false);
+  const [chkMsg,setChkMsg]=useState(null);
+  const check=async()=>{ if(!onCheckLabels)return; setChecking(true);setChkMsg(null); const r=await onCheckLabels(); setChecking(false); setChkMsg(r.error?{err:r.error}:{ok:`Checked ${r.checked} · ${r.booked} booked${r.booked?" — label ready":", still not booked in Webship"}`}); };
+  const PendingBar=()=> (pendingShips&&pendingShips.length)?(
+    <div className="border border-amber-200 bg-amber-50 rounded-lg px-3 py-2.5 flex items-center gap-3">
+      <Clock className="w-4 h-4 text-amber-600 shrink-0"/>
+      <div className="flex-1 text-[13px] text-amber-800">{pendingShips.length} order{pendingShips.length===1?"":"s"} staged in England, waiting to book in Webship. Once you ship {pendingShips.length===1?"it":"them"} there (or auto-ship books {pendingShips.length===1?"it":"them"}), pull the label + tracking here.</div>
+      <button onClick={check} disabled={checking} className="text-sm bg-amber-600 text-white rounded px-3 py-1.5 font-medium hover:bg-amber-700 disabled:opacity-50 flex items-center gap-1.5 shrink-0">{checking?<><Loader2 className="w-4 h-4 animate-spin"/>Checking…</>:<><RotateCcw className="w-4 h-4"/>Check for labels</>}</button>
+    </div>
+  ):null;
+  if(!shipments.length)return (<div className="space-y-3"><PendingBar/>{chkMsg&&<div className={`text-[12px] rounded px-2 py-1.5 flex items-center gap-1.5 ${chkMsg.err?"bg-rose-50 text-rose-600 border border-rose-200":"bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>{chkMsg.err?<AlertTriangle className="w-3.5 h-3.5"/>:<CheckCircle2 className="w-3.5 h-3.5"/>}{chkMsg.err||chkMsg.ok}</div>}<Empty icon={Truck} title="No shipments yet" body="Print a label on the Ship tab and it lands here with tracking, edit & reship."/></div>);
   const voidS=id=>setShipments(s=>s.map(x=>x.id===id?{...x,status:"Voided"}:x));
   const reship=s=>goShip({receiver:s.recipient,weight:s.weight,reference:s.reference});
   const tone=st=>st==="Delivered"?"green":st==="Voided"?"stone":st==="Exception"?"rose":st==="Out for delivery"?"amber":st==="In transit"?"amber":"blue";
@@ -1510,6 +1553,8 @@ function Shipments({shipments,setShipments,goShip}){
   const list=term?shipments.filter(s=>[s.recipient?.name,s.tracking,s.reference,s.invoiceNo,s.poNo,s.service].filter(Boolean).some(v=>String(v).toLowerCase().includes(term))):shipments;
   return (
     <div className="space-y-3">
+      <PendingBar/>
+      {chkMsg&&<div className={`text-[12px] rounded px-2 py-1.5 flex items-center gap-1.5 ${chkMsg.err?"bg-rose-50 text-rose-600 border border-rose-200":"bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>{chkMsg.err?<AlertTriangle className="w-3.5 h-3.5"/>:<CheckCircle2 className="w-3.5 h-3.5"/>}{chkMsg.err||chkMsg.ok}</div>}
       <div className="relative"><Search className="w-4 h-4 absolute left-3 top-2.5 text-stone-400"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search by name, tracking, order, reference or PO #" className="w-full bg-white border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm outline-none focus:border-[#0099FF]"/></div>
       <div className="border border-stone-200 rounded-lg overflow-hidden bg-white divide-y divide-stone-100">
         <div className="flex items-center gap-3 px-4 py-2 text-[11px] uppercase tracking-widest text-stone-400 bg-stone-50"><div className="w-4"/><div className="w-24">Date</div><div className="flex-1">Recipient</div><div className="w-40 hidden md:block">Tracking</div><div className="w-20 text-right">Rate</div><div className="w-24 text-right">Status</div></div>
@@ -1767,7 +1812,7 @@ function Dashboard({shipments,orders,returns,goTab}){
 
 /* ════════ BATCH ════════ */
 const US_STATES=["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
-const SERVICE_OPTIONS={FedEx:["FedEx Ground","FedEx Home Delivery","FedEx 2Day","FedEx Express Saver","FedEx Standard Overnight","FedEx Priority Overnight","FedEx First Overnight"],UPS:["UPS Ground","UPS 3 Day Select","UPS 2nd Day Air","UPS Next Day Air"],DHL:["DHL Express"]};
+const SERVICE_OPTIONS={FedEx:["FedEx Ground","FedEx Home Delivery","FedEx 2Day","FedEx Express Saver","FedEx Standard Overnight","FedEx Priority Overnight"],UPS:["UPS Ground","UPS 3 Day Select","UPS 2nd Day Air","UPS Next Day Air"],DHL:["DHL Express"]};
 const speedRank=(label)=>{const t=String(label||"").toLowerCase();if(/first overnight/.test(t))return 1;if(/priority overnight/.test(t))return 2;if(/standard overnight|next day/.test(t))return 3;if(/2.?day|2nd day air/.test(t))return 4;if(/express saver|3 day/.test(t))return 5;if(/home|ground/.test(t))return 7;return 6;};
 function Batch({orders,setOrders,client,rules,onShipped}){
   const pool=orders.filter(o=>o.status==="unfulfilled");
@@ -2800,7 +2845,7 @@ function AddressCard({title,data,set,required,residential,setResidential,address
     </div>
   </div>);
 }
-function PkgInput({label,w,...p}){const ww=w||"w-14";return <div className={ww}><div className="text-[10px] uppercase tracking-widest text-stone-500 text-center">{label}</div><input placeholder="0" {...p} type="number" className={`w-full bg-white border border-stone-300 rounded px-2 py-1 text-sm font-mono text-stone-900 outline-none focus:border-[#0099FF] placeholder-stone-300 text-center`}/></div>;}
+function PkgInput({label,w,req,...p}){const ww=w||"w-14";const on=req&&!String(p.value??"").trim();return <div className={ww}><div className={`text-[10px] uppercase tracking-widest text-center ${on?"text-[#0086E0]":"text-stone-500"}`}>{label}</div><input placeholder="0" {...p} type="number" className={`w-full border rounded px-2 py-1 text-sm font-mono text-stone-900 outline-none focus:border-[#0099FF] placeholder-stone-300 text-center ${on?"bg-[#E6F4FF] border-[#99D6FF]":"bg-white border-stone-300"}`}/></div>;}
 function Panel({title,children}){return <div className="border border-stone-200 rounded-lg bg-white p-4 space-y-3"><div className="text-[11px] uppercase tracking-widest text-stone-400">{title}</div>{children}</div>;}
 function Field({label,children}){return <label className="block space-y-1"><span className="text-[11px] text-stone-500">{label}</span>{children}</label>;}
 function Input({className="",...p}){return <input {...p} className={`w-full bg-white border border-stone-200 rounded px-2.5 py-2 text-sm font-mono text-stone-900 focus:border-[#0099FF] outline-none ${className}`}/>;}
