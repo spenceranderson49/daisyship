@@ -14,7 +14,20 @@ const carrierName = (c) => { const k = String(c || "").toUpperCase(); return CAR
 const num = (...v) => { for (const x of v) { const n = Number(x); if (!isNaN(n) && n > 0) return n; } return undefined; };
 const S = (n) => String(n);
 
-function mapQuotes(data) {
+function svcCodeFromName(name) {
+  const n = String(name || "").toLowerCase().replace(/[®™]/g, "").replace(/\(.*?\)/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const map = [
+    ["home delivery", "fedex_home_delivery"], ["ground economy", "fedex_ground_economy"], ["ground", "fedex_ground"],
+    ["express saver", "fedex_express_saver"], ["2day am", "fedex_2_day_am"], ["2 day am", "fedex_2_day_am"],
+    ["2day", "fedex_2_day"], ["2 day", "fedex_2_day"], ["standard overnight", "fedex_standard_overnight"],
+    ["priority overnight", "fedex_priority_overnight"], ["first overnight", "fedex_first_overnight"],
+    ["international economy", "fedex_international_economy"], ["international priority", "fedex_international_priority"],
+    ["international first", "fedex_international_first"],
+  ];
+  for (const [k, v] of map) if (n.includes(k)) return v;
+  return "";
+}
+function mapQuotes(data, cc) {
   const quotes = (data && (data.quotes || data.rates)) || [];
   if (!Array.isArray(quotes)) return [];
   return quotes.map((q, i) => {
@@ -24,8 +37,10 @@ function mapQuotes(data) {
     const days = num(q.transitDays, q.deliveryDays, q.businessDaysInTransit);
     const surcharges = Array.isArray(q.surcharges) ? q.surcharges.map((s) => ({ label: s.description || s.name || "Surcharge", amount: num(s.amount) || 0 })) : [];
     const qwType = S(q.quotedWeightType || q.weightType || "").toLowerCase();
-    const pkgCode = q.packageTypeCode || q.packageType || ((q.carrierCode || q.carrier) ? String(q.carrierCode || q.carrier).toLowerCase() + "_custom_package" : "");
-    return { key: code || ("svc_" + i), carrier: carrierName(q.carrierCode || q.carrier), carrierCode: q.carrierCode || "", serviceCode: q.serviceCode || "", packageTypeCode: pkgCode, label: desc, cost: Math.round(amount * 100) / 100, base: num(q.baseAmount) || null, surcharges, minDays: days, maxDays: days, zone: q.zone, quotedWeight: num(q.quotedWeight) || null, dimWeight: qwType.indexOf("dim") >= 0 };
+    const carrierCode = q.carrierCode || q.carrier || cc || "";
+    const serviceCode = q.serviceCode || q.service || q.serviceType || q.svcCode || q.code || svcCodeFromName(desc);
+    const pkgCode = q.packageTypeCode || q.packageType || (carrierCode ? String(carrierCode).toLowerCase() + "_custom_package" : "");
+    return { key: code || ("svc_" + i), carrier: carrierName(carrierCode), carrierCode, serviceCode, packageTypeCode: pkgCode, label: desc, cost: Math.round(amount * 100) / 100, base: num(q.baseAmount) || null, surcharges, minDays: days, maxDays: days, zone: q.zone, quotedWeight: num(q.quotedWeight) || null, dimWeight: qwType.indexOf("dim") >= 0 };
   }).filter((x) => x.cost > 0);
 }
 
@@ -61,7 +76,7 @@ exports.handler = async (event) => {
     const mkBody = (cc, sig) => ({
       carrierCode: cc,
       serviceCode: "",
-      packageTypeCode: "",
+      packageTypeCode: body.packageTypeCode || "",
       sender: { country: body.fromCountry || "US", zip: String(body.fromZip || "").trim() },
       receiver,
       residential: !!body.residential,
@@ -108,13 +123,13 @@ exports.handler = async (event) => {
       return { ok: false, err: last };
     }
 
-    const carriers = (acct.carriers || process.env.ENGLAND_CARRIERS || "fedex,dhl").split(",").map((s) => s.trim()).filter(Boolean);
+    const carriers = (body.carriers || acct.carriers || process.env.ENGLAND_CARRIERS || "fedex,dhl").split(",").map((s) => s.trim()).filter(Boolean);
     let all = [];
     const tried = [];
     let firstErr = null;
-    for (const cc of carriers) {
-      const res = await quoteCarrier(cc);
-      if (res.ok) { const r = mapQuotes(res.data); all = all.concat(r); tried.push(cc + " → OK (" + r.length + ")"); }
+    const results = await Promise.all(carriers.map(async (cc) => ({ cc, res: await quoteCarrier(cc) })));
+    for (const { cc, res } of results) {
+      if (res.ok) { const r = mapQuotes(res.data, cc); all = all.concat(r); tried.push(cc + " → OK (" + r.length + ")"); }
       else { tried.push(cc + " → HTTP " + (res.err && res.err.status) + (res.err && res.err.detail ? (": " + res.err.detail) : "")); if (!firstErr) firstErr = res.err; }
     }
 
