@@ -9,7 +9,7 @@ const FW_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfIAAAAsCAYAAACe0jo
 
 
 const DEFAULT_BRAND={name1:"Shipping",name2:"Cloud",primary:FW_BLUE,dark:FW_DARK,partnerLabel:"by",logo:FW_LOGO,showLogo:true};
-const BUILD_TAG="addr-v34";
+const BUILD_TAG="addr-v36";
 
 /* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
@@ -87,6 +87,29 @@ async function getLiveRates(s,england){
 }
 const SHIP_ENDPOINT="/.netlify/functions/ship";
 function acctOf(england){return {base:england.base,apiKey:england.apiKey,customerId:england.customerId,integrationId:england.integrationId};}
+/* ── shared per-order shipping helpers (used by Orders individual ship + Batch) ── */
+async function ratesForOrder(o,opts,eng){
+  const box=opts.box||{L:12,W:9,H:4};
+  return getLiveRates({carriers:"fedex",fromZip:(opts.sender&&opts.sender.zip)||opts.fromZip,toZip:o.zip,toCountry:o.country||"US",residential:!!opts.residential,packageTypeCode:opts.packageTypeCode||"",pieces:[{weight:opts.weightLb||o.weight||1,L:box.L,W:box.W,H:box.H}]},eng);
+}
+function orderToEngland(o,opts,sender,eng){
+  const box=opts.box||{L:12,W:9,H:4};
+  const wt=opts.weightLb||o.weight||1;
+  const q=opts.quote||{};
+  return {
+    reference:o.name||"",orderNumber:o.name||"",shipmentDate:opts.shipDate||new Date().toISOString().slice(0,10),
+    carrierCode:q.carrierCode,serviceCode:q.serviceCode,packageTypeCode:opts.packageTypeCode||q.packageTypeCode||"",
+    shippingService:q.label,contentDescription:o.items||"Merchandise",
+    residential:!!opts.residential,signatureOption:opts.signatureOption||"none",
+    sender:{...(sender||{}),country:(sender&&sender.country)||"US"},
+    receiver:{name:o.customer,company:o.company,address1:o.address1,address2:o.address2,city:o.city,state:o.state,zip:o.zip,country:o.country||"US",phone:o.phone,email:o.email},
+    pieces:[{weight:wt,length:box.L,width:box.W,height:box.H}],
+    providerAccountId:(eng&&eng.providerAccountId)||null,
+  };
+}
+async function bookOrderLabel(o,opts,eng,sender){
+  return shipCall({action:"ship",account:acctOf(eng),order:orderToEngland(o,opts,sender,eng)});
+}
 async function shipCall(payload){
   const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),20000);
   try{
@@ -692,6 +715,7 @@ function usePersist(key,initial){
 }
 export default function App(){
   const [tab,setTab]=useState("ship");
+  useEffect(()=>{ try{ if(localStorage.getItem("scDataV")!=="3"){ ["orders","shipments","returns","ledger","invoices","emails","pendingShips"].forEach(k=>localStorage.removeItem(k)); localStorage.setItem("scDataV","3"); window.location.reload(); } }catch(e){} },[]);
   const [users,setUsers]=usePersist("users",SEED_USERS);
   const [currentUser,setCurrentUser]=usePersist("session",null);
   const [clients,setClients]=usePersist("clients",SEED_CLIENTS);
@@ -854,7 +878,7 @@ export default function App(){
           {tab==="ship"&&<Ship client={client} accounts={accounts} orders={orders} settings={settings} setSettings={setSettings} rules={rules} drafts={drafts} setDrafts={setDrafts} prefill={prefill} clearPrefill={()=>setPrefill(null)} onShipped={onShipped} onPending={onPending} logEmail={logEmail} onQuickQuote={()=>setQQ(true)}/>}
           {tab==="scan"&&<Scan orders={orders} goShip={goShip} goTab={setTab}/>}
           {tab==="orders"&&<Orders orders={orders} setOrders={setOrders} goShip={goShip} client={client} settings={settings} onShipped={onShipped}/>}
-          {tab==="batch"&&<Batch orders={orders} setOrders={setOrders} client={client} rules={rules} onShipped={onShipped}/>}
+          {tab==="batch"&&<Batch orders={orders} setOrders={setOrders} client={client} rules={rules} settings={settings} onShipped={onShipped}/>}
           {tab==="shipments"&&<Shipments shipments={shipments} setShipments={setShipments} goShip={goShip} pendingShips={pendingShips} onCheckLabels={checkPendingLabels}/>}
           {tab==="drafts"&&<Drafts drafts={drafts} setDrafts={setDrafts} goShip={goShip}/>}
           {tab==="returns"&&<Returns returns={returns} setReturns={setReturns} orders={orders} settings={settings} logEmail={logEmail}/>}
@@ -874,29 +898,30 @@ export default function App(){
 function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDrafts,prefill,clearPrefill,onShipped,onPending,logEmail,onQuickQuote}){
   const empty={country:"United States",name:"",company:"",zip:"",state:"",city:"",address1:"",address2:"",address3:"",phone:"",email:""};
   const [sender,setSender]=useState({country:"United States",...settings.sender,address2:"",address3:""});
-  const [receiver,setReceiver]=useState(empty);
-  const [reference,setReference]=useState("");
-  const [invoiceNo,setInvoiceNo]=useState("");
-  const [poNo,setPoNo]=useState("");
+  const [receiver,setReceiver]=usePersist("ship.receiver",empty);
+  const [reference,setReference]=usePersist("ship.reference","");
+  const [invoiceNo,setInvoiceNo]=usePersist("ship.invoiceNo","");
+  const [poNo,setPoNo]=usePersist("ship.poNo","");
   const [returnDiff,setReturnDiff]=useState(false);
-  const [pieces,setPieces]=useState([{weight:"",L:"",W:"",H:""}]);
-  const [insurance,setInsurance]=useState("");
-  const [residential,setRes]=useState(true);
+  const [pieces,setPieces]=usePersist("ship.pieces",[{weight:"",L:"",W:"",H:""}]);
+  const [insurance,setInsurance]=usePersist("ship.insurance","");
+  const [residential,setRes]=usePersist("ship.residential",true);
   const [resTouched,setResTouched]=useState(false);
-  const [signature,setSig]=useState(false);
-  const [sigOption,setSigOption]=useState("none");
-  const [saturday,setSat]=useState(false);
+  const [signature,setSig]=usePersist("ship.signature",false);
+  const [sigOption,setSigOption]=usePersist("ship.sigOption","none");
+  const [saturday,setSat]=usePersist("ship.saturday",false);
   const [orderSort,setOrderSort]=useState("date");
-  const [billTo,setBillTo]=useState(settings.defaultBillTo||"sender");
-  const [thirdAcct,setThirdAcct]=useState("");
+  const [ordersOpen,setOrdersOpen]=usePersist("ship.ordersOpen",false);
+  const [orderQ,setOrderQ]=useState("");
+  const [billTo,setBillTo]=usePersist("ship.billTo",settings.defaultBillTo||"sender");
+  const [thirdAcct,setThirdAcct]=usePersist("ship.thirdAcct","");
   const [bought,setBought]=useState(null);
   const [shipStatus,setShipStatus]=useState(null);
   const [labelPreview,setLabelPreview]=useState(null); // {pdf, tracking, service, carrier}
   const [shipDate,setShipDate]=useState(()=>new Date().toISOString().slice(0,10));
-  const [oneRate,setOneRate]=useState(false);
-  const orBox=oneRate?oneRateBoxFor(pieces[0]&&pieces[0].L,pieces[0]&&pieces[0].W,pieces[0]&&pieces[0].H,(+(pieces[0]&&pieces[0].weight)||0)+(+(pieces[0]&&pieces[0].oz)||0)/16):null;
+  const orBox=oneRateBoxFor(pieces[0]&&pieces[0].L,pieces[0]&&pieces[0].W,pieces[0]&&pieces[0].H,(+(pieces[0]&&pieces[0].weight)||0)+(+(pieces[0]&&pieces[0].oz)||0)/16);
   const [recErrors,setRecErrors]=useState([]);
-  const [selectedOrder,setSelectedOrder]=useState(null);
+  const [selectedOrder,setSelectedOrder]=usePersist("ship.selectedOrder",null);
   const [verify,setVerify]=useState(null);
   const [verifyNonce,setVerifyNonce]=useState(0);
   const [saved,setSaved]=useState(false);
@@ -904,6 +929,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
   const [emailMsg,setEmailMsg]=useState(settings.emailMessage||"");
   const [msgSaved,setMsgSaved]=useState(false);
   const [sent,setSent]=useState("");
+  useEffect(()=>{ if(receiver.email&&!String(emailTo||"").trim()) setEmailTo(receiver.email); },[receiver.email]);
   const [customs,setCustoms]=useState({reason:"Sale",incoterm:INCOTERMS[0],dutiesBill:"receiver",lines:[{desc:"",hts:"",origin:"United States",qty:1,value:"",weight:""}]});
   const [showCI,setShowCI]=useState(false);
 
@@ -965,7 +991,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
 
   const swap=()=>{const s=sender;setSender(receiver);setReceiver(s);};
   const ready=/^\d{5}/.test(receiver.zip||"")&&totalWeight>0;
-  const shipment={fromZip:sender.zip||client.origin,toZip:receiver.zip,pieces:pieces.map(p=>({...p,weight:pw(p)})),residential,signature,signatureOption:sigOption,saturdayDelivery:saturday,intl,packageTypeCode:orBox?orBox.code:""};
+  const shipment={fromZip:sender.zip||client.origin,toZip:receiver.zip,pieces:pieces.map(p=>({...p,weight:pw(p)})),residential,signature,signatureOption:sigOption,saturdayDelivery:saturday,intl,packageTypeCode:""};
   // Front screen shows FedEx only (until a USPS/UPS/DAP deal is added). Blank-price skeleton before rates load.
   const FEDEX_SKELETON=[
     {key:"fedex_ground",carrier:"FedEx",label:"FedEx Ground®",cost:null},
@@ -977,6 +1003,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
   ];
   const localQuotes=()=>quoteRates(shipment).filter(q=>q.carrier==="FedEx");
   const [rateSrc,setRateSrc]=useState({rates:[],live:false,loading:false,error:null});
+  const [orRates,setOrRates]=useState([]);
   const [fxTransit,setFxTransit]=useState({});
   useEffect(()=>{
     let cancel=false;
@@ -984,6 +1011,19 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
     fedexTransit(shipment).then(m=>{ if(!cancel) setFxTransit(m||{}); });
     return ()=>{cancel=true;};
   },[receiver.zip,sender.zip,residential,JSON.stringify(pieces)]);
+  useEffect(()=>{
+    let cancel=false;
+    setOrRates([]);
+    const eng=settings.england;
+    if(!ready||!orBox||!(eng&&eng.enabled&&eng.apiKey&&eng.customerId))return;
+    // fetch One Rate pricing for the qualifying box, as its own set of services
+    getLiveRates({...shipment,packageTypeCode:orBox.code},eng).then(res=>{ if(cancel)return;
+      if(res&&res.live&&res.rates&&res.rates.length){
+        setOrRates(res.rates.filter(q=>q.carrier==="FedEx").map(q=>({...q,key:"or_"+q.key,label:q.label.replace(/®?$/,"")+" · One Rate",_oneRate:true,packageTypeCode:orBox.code})));
+      }
+    });
+    return ()=>{cancel=true;};
+  },[JSON.stringify(pieces),receiver.zip,sender.zip,residential,settings.england,orBox&&orBox.code]);
   useEffect(()=>{
     let cancel=false;
     if(!ready){setRateSrc({rates:[],live:false,loading:false,error:null});return;}
@@ -996,19 +1036,21 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
       });
     } else setRateSrc({rates:localQuotes(),live:false,loading:false,error:null});
     return ()=>{cancel=true;};
-  },[JSON.stringify(pieces),receiver.zip,sender.zip,residential,signature,intl,settings.england,oneRate,orBox&&orBox.code]);
+  },[JSON.stringify(pieces),receiver.zip,sender.zip,residential,signature,intl,settings.england]);
   // address classified yet? only then do we hide the non-matching ground product
   const addrClassified=!!(resTouched||(verify&&verify.type));
   const quotes=useMemo(()=>{
     let rates=(rateSrc.rates||[]).filter(q=>q.carrier==="FedEx");
     let list=rates.length?rates:FEDEX_SKELETON.slice();   // skeleton (blank prices) until live rates arrive
+    // One Rate services appear automatically (only when the package qualifies for a One Rate box)
+    list=list.concat((orRates||[]).filter(q=>q.carrier==="FedEx"));
     list=list.filter(q=>!/first\s*overnight/i.test(q.label||""));   // never offer First Overnight
     if(addrClassified){
       list=list.filter(q=>{const k=canonSvc(q.label);if(residential&&k==="ground")return false;if(!residential&&k==="home")return false;return true;});
     }
     return list.map(q=>{const m=fxTransit[canonSvc(q.label)];const cost=q.cost;const real=!!(m&&m.days!=null);const days=real?m.days:estTransitDays(q.label,q.zone);return {...q,sell:cost!=null?Math.round(cost*(1+client.markup/100)*100)/100:null,fxDays:days,fxDate:real?m.date:undefined,fxLive:real};})
       .sort((a,b)=>{if(a.sell==null&&b.sell==null)return 0;if(a.sell==null)return 1;if(b.sell==null)return -1;return a.sell-b.sell;});
-  },[rateSrc,client.markup,fxTransit,residential,addrClassified]);
+  },[rateSrc,orRates,client.markup,fxTransit,residential,addrClassified]);
   const best=(rateSrc.live&&quotes.length&&quotes[0].sell!=null)?quotes[0].key:null;
 
   const buildRec=(q,carrier,extra)=>({id:Date.now(),date:new Date().toLocaleDateString(),tracking:(extra&&extra.tracking)||newTracking(carrier),carrier,service:q.label,recipient:{...receiver},sender:{...sender},fromZip:sender.zip,toZip:receiver.zip,weight:totalWeight,pieces:pieces.map(p=>({...p})),dims:pieces[0],insurance,cost:q.cost,sell:q.sell,billTo,thirdAcct,status:"Label created",lastScan:"Label created",eta:"—",onTime:true,reference,invoiceNo,poNo,residential,intl,bookNumber:extra&&extra.bookNumber,customs:intl?{...customs,total:customsTotal,ci:"CI-"+rnd(5)}:null});
@@ -1041,7 +1083,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
     setBought(q.key);setShipStatus({state:"booking",key:q.key});
     if(!q.serviceCode||!q.carrierCode){setShipStatus({state:"error",key:q.key,msg:"Enter the shipment details so live rates load, then print (need the carrier/service from the rate)."});setBought(null);return;}
     const order={reference:reference||invoiceNo||"",orderNumber:invoiceNo||reference||"",shipmentDate:shipDate,
-      carrierCode:q.carrierCode,serviceCode:q.serviceCode,packageTypeCode:(oneRate&&orBox)?orBox.code:(q.packageTypeCode||""),
+      carrierCode:q.carrierCode,serviceCode:q.serviceCode,packageTypeCode:q.packageTypeCode||"",
       shippingService:q.label,shippingTotal:String(q.sell??q.cost??"0.00"),contentDescription:"Merchandise",
       signatureOption:sigOption,saturdayDelivery:saturday,insuranceAmount:insurance||null,residential,
       billingParty:billTo==="third"?"third_party":(billTo==="receiver"?"receiver":"sender"),billingAccount:billTo==="third"?(thirdAcct||null):null,
@@ -1066,23 +1108,30 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
     if(orderSort==="weight")return (b.weight||0)-(a.weight||0);
     return String(b.id).localeCompare(String(a.id));
   });},[orders,orderSort]);
-  const saveDraft=()=>{const d={id:Date.now(),label:reference||receiver.name||receiver.city||"Untitled",when:new Date().toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}),to:`${receiver.city||""}${receiver.state?", "+receiver.state:""}`,snap:{sender,receiver,reference,invoiceNo,poNo,pieces,residential,signature,billTo,thirdAcct,insurance,selectedOrder,customs}};setDrafts(p=>[d,...p]);setSaved(true);setTimeout(()=>setSaved(false),1600);};
+  const ordersFiltered=useMemo(()=>{const t=orderQ.trim().toLowerCase();return t?ordersToShow.filter(o=>((o.name||"")+(o.customer||"")+(o.city||"")+(o.state||"")+(o.zip||"")+(o.sku||"")+(o.items||"")+(o.source||"")).toLowerCase().includes(t)):ordersToShow;},[ordersToShow,orderQ]);
+  const [naming,setNaming]=useState(false);
+  const [draftName,setDraftName]=useState("");
+  const commitDraft=(title)=>{const d={id:Date.now(),label:title||reference||receiver.name||receiver.city||"Untitled",when:new Date().toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}),to:`${receiver.city||""}${receiver.state?", "+receiver.state:""}`,snap:{sender,receiver,reference,invoiceNo,poNo,pieces,residential,signature,billTo,thirdAcct,insurance,selectedOrder,customs}};setDrafts(p=>[d,...p]);setNaming(false);setDraftName("");setSaved(true);setTimeout(()=>setSaved(false),1600);};
+  const saveDraft=()=>{setDraftName(reference||receiver.name||receiver.city||"");setNaming(true);};
   const newShipment=()=>{setReceiver({...empty,zip:""});setReference("");setInvoiceNo("");setPoNo("");setPieces([{weight:"",L:"",W:"",H:""}]);setInsurance("");setRes(true);setResTouched(false);setSig(false);setSigOption("none");setSat(false);setBillTo(settings.defaultBillTo||"sender");setThirdAcct("");setSelectedOrder(null);setVerify(null);setBought(null);setEmailTo("");setReturnDiff(false);};
   return (
     <div className="flex flex-col lg:flex-row gap-4">
       <aside className="lg:w-64 shrink-0 space-y-2">
         <div className="flex items-center justify-between gap-2 mb-1">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-stone-500"><ShoppingBag className="w-4 h-4"/>Orders</div>
-          <select value={orderSort} onChange={e=>setOrderSort(e.target.value)} className="bg-white border border-stone-200 rounded px-1.5 py-1 text-[11px] outline-none focus:border-[#0099FF]"><option value="date">Newest</option><option value="total">Total</option><option value="customer">Name</option><option value="state">State</option><option value="weight">Weight</option></select>
+          <button onClick={()=>setOrdersOpen(o=>!o)} className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-stone-500 hover:text-stone-700"><ChevronRight className={`w-4 h-4 transition-transform ${ordersOpen?"rotate-90":""}`}/><ShoppingBag className="w-4 h-4"/>Orders{ordersToShow.length?<span className="text-stone-400 normal-case font-normal">· {ordersToShow.length}</span>:""}</button>
+          {ordersOpen&&<select value={orderSort} onChange={e=>setOrderSort(e.target.value)} className="bg-white border border-stone-200 rounded px-1.5 py-1 text-[11px] outline-none focus:border-[#0099FF]"><option value="date">Newest</option><option value="total">Total</option><option value="customer">Name</option><option value="state">State</option><option value="weight">Weight</option></select>}
         </div>
-        {ordersToShow.length===0?<div className="border border-dashed border-stone-300 rounded-lg p-4 text-center text-xs text-stone-400">No unfulfilled orders.</div>:ordersToShow.map(o=>(
-          <button key={o.id} onClick={()=>applyOrder(o)} className={`w-full text-left border rounded-lg p-3 transition-colors ${selectedOrder===o.id?"border-[#33ABFF] bg-[#E6F4FF]":"border-stone-200 bg-white hover:border-stone-300"}`}>
-            <div className="flex items-center justify-between"><span className="font-semibold text-sm text-stone-800 flex items-center gap-1.5">{o.name}{o.source&&<span className="text-[9px] uppercase tracking-wide text-stone-400 border border-stone-200 rounded px-1">{o.source}</span>}</span><span className="font-mono text-xs text-stone-400">${o.total}</span></div>
-            <div className="text-xs text-stone-600 mt-0.5">{o.customer}</div>
-            <div className="text-[11px] text-stone-400 mt-0.5">{o.city}, {o.state} {o.zip}</div>
-            <div className="text-[11px] text-stone-400 truncate">{o.items}</div>
-          </button>
-        ))}
+        {ordersOpen&&<>
+          <div className="relative"><Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400"/><input value={orderQ} onChange={e=>setOrderQ(e.target.value)} placeholder="Search orders" className="w-full bg-white border border-stone-200 rounded-lg pl-8 pr-2 py-1.5 text-sm outline-none focus:border-[#0099FF]"/></div>
+          {ordersFiltered.length===0?<div className="border border-dashed border-stone-300 rounded-lg p-4 text-center text-xs text-stone-400">{ordersToShow.length===0?"No unfulfilled orders.":"No orders match."}</div>:ordersFiltered.map(o=>(
+            <button key={o.id} onClick={()=>applyOrder(o)} className={`w-full text-left border rounded-lg p-3 transition-colors ${selectedOrder===o.id?"border-[#33ABFF] bg-[#E6F4FF]":"border-stone-200 bg-white hover:border-stone-300"}`}>
+              <div className="flex items-center justify-between"><span className="font-semibold text-sm text-stone-800 flex items-center gap-1.5">{o.name}{o.source&&<span className="text-[9px] uppercase tracking-wide text-stone-400 border border-stone-200 rounded px-1">{o.source}</span>}</span><span className="font-mono text-xs text-stone-400">${o.total}</span></div>
+              <div className="text-xs text-stone-600 mt-0.5">{o.customer}</div>
+              <div className="text-[11px] text-stone-400 mt-0.5">{o.city}, {o.state} {o.zip}</div>
+              <div className="text-[11px] text-stone-400 truncate">{o.items}</div>
+            </button>
+          ))}
+        </>}
       </aside>
       <div className="flex-1 min-w-0 space-y-4">
         <div className="flex items-center justify-between">
@@ -1140,15 +1189,14 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
               <span className="text-[11px] text-stone-400 font-mono">total {totalWeight} lb</span>
               <div className="flex items-center gap-1"><span className="text-[10px] uppercase tracking-widest text-stone-500">Insure $</span><input type="number" value={insurance} onChange={e=>setInsurance(e.target.value)} placeholder="0" className="w-16 bg-white border border-stone-300 rounded px-2 py-1 text-sm font-mono outline-none focus:border-[#0099FF] placeholder-stone-300"/></div>
               <div className="flex items-center gap-1.5"><span className="text-[10px] uppercase tracking-widest text-stone-500">Signature</span><select value={sigOption} onChange={e=>{setSigOption(e.target.value);setSig(e.target.value!=="none");}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-[#0099FF]"><option value="none">None</option><option value="direct">Direct signature</option><option value="indirect">Indirect signature</option><option value="adult">Adult signature</option></select></div>
-              {quotes.some(q=>{const l=String(q.label||"").toLowerCase();return l.includes("fedex")&&/(overnight|2\s?day|express saver)/.test(l);})&&<label className="flex items-center gap-1.5 text-[11px] text-stone-600 cursor-pointer"><input type="checkbox" checked={saturday} onChange={e=>setSat(e.target.checked)} className="accent-[#0086E0]"/><span className="uppercase tracking-widest text-stone-500">Saturday delivery</span></label>}
-              <label className="flex items-center gap-1.5 text-[11px] text-stone-600 cursor-pointer"><input type="checkbox" checked={oneRate} onChange={e=>setOneRate(e.target.checked)} className="accent-[#0086E0]"/><span className="uppercase tracking-widest text-stone-500">FedEx One Rate</span></label>
+              {quotes.some(q=>{const l=String(q.label||"").toLowerCase();return l.includes("fedex")&&/(overnight|2\s?day|express saver)/.test(l);})&&<label className="flex items-center gap-1.5 text-[11px] text-stone-600 cursor-pointer"><input type="checkbox" checked={saturday} onChange={e=>setSat(e.target.checked)} className="accent-[#0086E0]"/><span className="uppercase tracking-widest text-stone-500">Saturday delivery <span className="text-stone-400 normal-case">(Express only)</span></span></label>}
             </div>
           </div>
-          {oneRate&&<div className={`text-[12px] rounded px-3 py-2 flex items-center gap-2 ${orBox?"bg-[#E6F4FF] text-[#0072BE] border border-[#99D6FF]":"bg-amber-50 text-amber-700 border border-amber-200"}`}><Boxes className="w-4 h-4 shrink-0"/>{orBox?<span>Qualifies for <b>{orBox.name}</b> — pricing this box only ({(+(pieces[0]&&pieces[0].L)||0)}×{(+(pieces[0]&&pieces[0].W)||0)}×{(+(pieces[0]&&pieces[0].H)||0)} in). Enter dims/weight to auto-select.</span>:<span>Enter length, width, height &amp; weight — the package must fit a One Rate box (≤2,200 cu in, ≤50 lb). Larger shipments aren't eligible for One Rate.</span>}</div>}
+          {orBox&&<div className="text-[12px] rounded px-3 py-2 flex items-center gap-2 bg-[#E6F4FF] text-[#0072BE] border border-[#99D6FF]"><Boxes className="w-4 h-4 shrink-0"/><span>Package qualifies for <b>{orBox.name}</b> — FedEx One Rate flat pricing is shown in the rates below.</span></div>}
           {pieces.map((p,i)=>(
             <div key={i} className="flex flex-wrap items-end gap-2 bg-white border border-stone-200 rounded px-2 py-2">
               <div className="text-[11px] text-stone-400 font-mono w-6">#{i+1}</div>
-              <div><div className="text-[10px] uppercase tracking-widest text-stone-500">Box</div><select onChange={e=>{const v=e.target.value; if(v.startsWith("or:")){setOneRate(true);} else {const pr=(settings.boxes||SEED_BOXES)[+v];if(pr)setPiece(i,{L:pr.L,W:pr.W,H:pr.H,weight:p.weight});}}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-[#0099FF]"><option value="-1">Custom</option>{(settings.boxes||SEED_BOXES).map((pr,j)=><option key={pr.id} value={j}>{pr.name}</option>)}<optgroup label="FedEx One Rate">{FEDEX_ONERATE.map(b=><option key={b.code} value={"or:"+b.code}>{b.name}</option>)}</optgroup></select></div>
+              <div><div className="text-[10px] uppercase tracking-widest text-stone-500">Box</div><select onChange={e=>{const pr=(settings.boxes||SEED_BOXES)[+e.target.value];if(pr)setPiece(i,{L:pr.L,W:pr.W,H:pr.H,weight:p.weight});}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-[#0099FF]"><option value="-1">Custom</option>{(settings.boxes||SEED_BOXES).map((pr,j)=><option key={pr.id} value={j}>{pr.name}</option>)}</select></div>
               <PkgInput label="L" req value={p.L} onChange={e=>setPiece(i,{L:e.target.value})}/>
               <PkgInput label="W" req value={p.W} onChange={e=>setPiece(i,{W:e.target.value})}/>
               <PkgInput label="H" req value={p.H} onChange={e=>setPiece(i,{H:e.target.value})}/>
@@ -1199,6 +1247,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
         </div>}
         <ServiceList quotes={quotes} best={best} bought={bought} action={ready?print:null} label="Print label" doneLabel="Printed" ready={ready}/>
         {labelPreview&&<LabelPreviewModal data={labelPreview} onClose={()=>setLabelPreview(null)}/>}
+        {naming&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={()=>setNaming(false)}><div className="bg-white rounded-xl shadow-xl p-5 w-full max-w-sm space-y-3" onClick={e=>e.stopPropagation()}><div className="text-sm font-semibold text-stone-800">Name this draft</div><input autoFocus value={draftName} onChange={e=>setDraftName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")commitDraft(draftName.trim());}} placeholder="e.g. Dana Cole – Miami" className="w-full bg-white border border-stone-300 rounded px-3 py-2 text-sm outline-none focus:border-[#0099FF]"/><div className="flex justify-end gap-2"><button onClick={()=>setNaming(false)} className="text-sm px-3 py-1.5 rounded text-stone-600 hover:bg-stone-100">Cancel</button><button onClick={()=>commitDraft(draftName.trim())} className="text-sm px-3 py-1.5 rounded bg-stone-900 text-white font-medium hover:bg-stone-800">Save draft</button></div></div></div>}
         {shipStatus&&<div className={`flex items-center gap-2 text-sm rounded-lg px-3 py-2.5 ${shipStatus.state==="error"?"bg-rose-50 text-rose-700 border border-rose-200":shipStatus.state==="booked"?"bg-emerald-50 text-emerald-700 border border-emerald-200":shipStatus.state==="pending_timeout"?"bg-amber-50 text-amber-700 border border-amber-200":"bg-[#E6F4FF] text-[#006FBF] border border-[#99D6FF]"}`}>
           {shipStatus.state==="booking"&&<><Loader2 className="w-4 h-4 animate-spin"/>Booking label on your England account…</>}
           {shipStatus.state==="pending"&&<><Loader2 className="w-4 h-4 animate-spin"/>Order pushed to England — waiting for it to book and return the label…</>}
@@ -1238,6 +1287,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={newShipment} className="flex items-center gap-1.5 text-sm bg-stone-200 text-stone-700 rounded px-4 py-2 font-medium hover:bg-stone-300"><Plus className="w-4 h-4"/>New shipment</button>
           <button onClick={saveDraft} className={`flex items-center gap-1.5 text-sm rounded px-4 py-2 font-medium ${saved?"bg-emerald-600 text-white":"bg-stone-900 text-white hover:bg-stone-800"}`}>{saved?<><Check className="w-4 h-4"/>Saved to drafts</>:<><FileText className="w-4 h-4"/>Save draft</>}</button>
+          <button onClick={()=>{setReceiver(empty);setPieces([{weight:"",L:"",W:"",H:""}]);setReference("");setInvoiceNo("");setPoNo("");setInsurance("");setSig(false);setSigOption("none");setSat(false);setThirdAcct("");setSelectedOrder(null);setResTouched(false);setRes(true);setCustoms({reason:"Sale",incoterm:INCOTERMS[0],dutiesBill:"receiver",lines:[{desc:"",hts:"",origin:"United States",qty:1,value:"",weight:""}]});setEmailTo("");setBought(null);setShipStatus(null);}} className="flex items-center gap-1.5 text-sm rounded px-4 py-2 font-medium bg-white border border-stone-300 text-stone-700 hover:bg-stone-50"><Plus className="w-4 h-4"/>New shipment</button>
         </div>
       </div>
     </div>
@@ -1308,6 +1358,12 @@ function LabelPreviewModal({data,onClose}){
     </div>
   );
 }
+function fedexLabel(label){
+  const s=String(label||"");
+  const m=s.match(/^(.*?)Fed(Ex)(.*)$/);
+  if(!m) return s;
+  return <>{m[1]}<span style={{color:"#4D148C"}}>Fed</span><span style={{color:"#FF6600"}}>Ex</span>{m[3]}</>;
+}
 function ServiceList({quotes,best,bought,action,label,doneLabel,showCost,ready=true}){
   const [view,setView]=useState("cheapest");
   const [open,setOpen]=useState(null);
@@ -1334,7 +1390,7 @@ function ServiceList({quotes,best,bought,action,label,doneLabel,showCost,ready=t
         <div onClick={()=>setOpen(isOpen?null:q.key)} className="px-3 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-stone-50 rounded-lg">
           <ChevronRight className={`w-4 h-4 text-stone-400 shrink-0 transition-transform ${isOpen?"rotate-90":""}`}/>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">{view==="cheapest"&&<span className={`text-[10px] font-bold w-10 shrink-0 ${CARRIER_TINT[q.carrier]}`}>{q.carrier}</span>}<span className="text-sm truncate">{q.label}</span>{q.key===best&&ready&&<span className="text-[10px] uppercase text-[#0086E0] border border-[#99D6FF] rounded px-1">best value</span>}</div>
+            <div className="flex items-center gap-2">{view==="cheapest"&&<span className={`text-[10px] font-bold w-10 shrink-0 ${CARRIER_TINT[q.carrier]}`}>{q.carrier}</span>}<span className="text-sm truncate">{fedexLabel(q.label)}</span>{q.key===best&&ready&&<span className="text-[10px] uppercase text-[#0086E0] border border-[#99D6FF] rounded px-1">best value</span>}</div>
             <div className="text-[11px] text-stone-500 flex items-center gap-1"><Calendar className="w-3 h-3"/>Transit Time: {days?(<>{days} business day{days>1?"s":""}{eta?` · arrives ${fmtDeliv(eta)}`:""}</>):<span className="text-stone-300">—</span>}{fxLive&&days?<span className="text-[#0086E0] font-medium ml-1">FedEx</span>:""}</div>
           </div>
           {showCost&&<div className="text-right font-mono hidden sm:block"><div className="text-[10px] uppercase tracking-widest text-stone-400">cost</div><div className="text-sm text-stone-500">{ready&&q.cost!=null?money(q.cost):"—"}</div></div>}
@@ -1347,7 +1403,7 @@ function ServiceList({quotes,best,bought,action,label,doneLabel,showCost,ready=t
             {comps.map((c,i)=><div key={i} className="flex justify-between text-[13px]"><span className="text-stone-600">{c.label}</span><span className="font-mono text-stone-700">{money(c.amount)}</span></div>)}
             <div className="flex justify-between text-[13px] border-t border-stone-200 pt-1 mt-1 font-semibold"><span>Total</span><span className="font-mono">{money(sell)}</span></div>
           </div>
-          {q.dimWeight&&<div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-2 flex items-center gap-1.5"><AlertTriangle className="w-3 h-3 shrink-0"/>Billed on <b>dimensional weight</b>{q.quotedWeight?` (${q.quotedWeight} lb)`:""}, not actual weight — the box is large for its weight.</div>}
+          {q.dimWeight&&<div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-2 flex items-center gap-1.5"><AlertTriangle className="w-3 h-3 shrink-0"/>Billed at <b>{q.quotedWeight?`${q.quotedWeight} lb`:"a higher"}</b> dimensional weight.</div>}
           {eta&&<div className="text-[11px] text-stone-400 mt-2 flex items-center gap-1"><Calendar className="w-3 h-3"/>{fxLive?"FedEx delivery":"Estimated delivery"} {fmtDeliv(eta)}{days?` · ${days} business day${days>1?"s":""} in transit`:""}</div>}
         </div>}
       </div>
@@ -1468,20 +1524,50 @@ function OrderDetail({o,setOrders,client,settings,onShipped,goShip}){
   const [weight,setWeight]=useState(o.weight||1);
   const [boxIdx,setBoxIdx]=useState(-1);
   const [residential,setRes]=useState(!commercial);
+  const [oneRate,setOneRate]=useState(false);
   const [bought,setBought]=useState(null);
-  const [done,setDone]=useState(false);
-  const upd=(patch)=>setOrders(os=>os.map(x=>x.id===o.id?{...x,...patch}:x));
+  const [status,setStatus]=useState(null); // {state,msg}
+  const [labelPreview,setLabelPreview]=useState(null);
+  const [rateSrc,setRateSrc]=useState({rates:[],live:false,loading:false});
   const boxes=settings?.boxes||SEED_BOXES;
   const box=boxIdx>=0?boxes[boxIdx]:{L:12,W:9,H:4};
+  const eng=settings?.england;
+  const canBook=eng&&eng.enabled&&eng.apiKey&&eng.customerId;
   const fromZip=settings?.sender?.zip||client?.origin||"84003";
   const ready=/^\d{5}/.test(o.zip||"")&&(+weight>0);
-  const quotes=useMemo(()=>quoteRates({fromZip,toZip:o.zip,pieces:[{weight:+weight||0,L:box.L,W:box.W,H:box.H}],residential,intl:false}).filter(qq=>residential?qq.key!=="fedex_ground":qq.key!=="fedex_home").map(qq=>({...qq,sell:Math.round(qq.cost*(1+(client?.markup||0)/100)*100)/100})).sort((a,b)=>a.sell-b.sell),[o.zip,weight,box.L,box.W,box.H,residential,client]);
-  const best=quotes[0]?.key;
-  const printHere=(qq)=>{
+  const orBox=oneRate?oneRateBoxFor(box.L,box.W,box.H,+weight||0):null;
+  // live England rates (fall back to demo quoteRates when England isn't connected)
+  useEffect(()=>{
+    let cancel=false;
+    if(!ready){setRateSrc({rates:[],live:false,loading:false});return;}
+    if(canBook){
+      setRateSrc(s=>({...s,loading:true}));
+      ratesForOrder(o,{residential,box,weightLb:+weight,fromZip,sender:settings.sender,packageTypeCode:orBox?orBox.code:""},eng).then(res=>{ if(cancel)return;
+        if(res&&res.live&&res.rates&&res.rates.length)setRateSrc({rates:res.rates,live:true,loading:false});
+        else setRateSrc({rates:localOrderQuotes(),live:false,loading:false});
+      });
+    } else setRateSrc({rates:localOrderQuotes(),live:false,loading:false});
+    return ()=>{cancel=true;};
+  },[o.zip,weight,box.L,box.W,box.H,residential,oneRate,orBox&&orBox.code,eng]);
+  const localOrderQuotes=()=>quoteRates({fromZip,toZip:o.zip,pieces:[{weight:+weight||0,L:box.L,W:box.W,H:box.H}],residential,intl:false}).filter(qq=>qq.carrier==="FedEx");
+  const quotes=useMemo(()=>(rateSrc.rates||[]).filter(qq=>qq.carrier==="FedEx"&&!/first\s*overnight/i.test(qq.label||"")).filter(qq=>{const k=canonSvc(qq.label);if(residential&&k==="ground")return false;if(!residential&&k==="home")return false;return true;}).map(qq=>({...qq,sell:Math.round((qq.cost||0)*(1+(client?.markup||0)/100)*100)/100})).sort((a,b)=>a.sell-b.sell),[rateSrc,residential,client]);
+  const best=(rateSrc.live&&quotes[0])?quotes[0].key:null;
+  const upd=(patch)=>setOrders(os=>os.map(x=>x.id===o.id?{...x,...patch}:x));
+  const printHere=async(qq)=>{
     const carrier=carrierOf(qq.label);
-    const rec={id:Date.now(),date:new Date().toLocaleDateString(),tracking:newTracking(carrier),carrier,service:qq.label,recipient:{name:o.customer,company:o.company,zip:o.zip,state:o.state,city:o.city,address1:o.address1,phone:o.phone,email:o.email},sender:{...(settings?.sender||{})},fromZip,toZip:o.zip,weight:+weight,pieces:[{weight:+weight,L:box.L,W:box.W,H:box.H}],dims:box,cost:qq.cost,sell:qq.sell,billTo:"sender",status:"Label created",lastScan:"Label created",eta:"—",onTime:true,reference:o.name};
+    if(!canBook){ // demo mode: record locally
+      const rec={id:Date.now(),date:new Date().toLocaleDateString(),tracking:newTracking(carrier),carrier,service:qq.label,recipient:{name:o.customer,company:o.company,zip:o.zip,state:o.state,city:o.city,address1:o.address1,phone:o.phone,email:o.email},sender:{...(settings?.sender||{})},fromZip,toZip:o.zip,weight:+weight,pieces:[{weight:+weight,L:box.L,W:box.W,H:box.H}],dims:box,cost:qq.cost,sell:qq.sell,billTo:"sender",status:"Label created",lastScan:"Label created",eta:"—",onTime:true,reference:o.name};
+      onShipped(rec,o.id); setBought(qq.key); setStatus({state:"demo",msg:"Recorded (demo — connect England to book real labels)."}); return;
+    }
+    const need=[]; if(!o.customer&&!o.company)need.push("name"); if(String(o.phone||"").replace(/\D/g,"").length<10)need.push("10-digit phone"); if(!o.email)need.push("email");
+    if(need.length){ setStatus({state:"error",msg:"England needs the receiver's "+need.join(", ")+". Edit the order or open in Ship tab."}); return; }
+    setBought(qq.key); setStatus({state:"booking",msg:"Booking with England…"});
+    const res=await bookOrderLabel(o,{quote:qq,box,weightLb:+weight,residential,packageTypeCode:orBox?orBox.code:(qq.packageTypeCode||""),sender:settings.sender},eng,settings.sender);
+    if(!res||!res.ok){ setStatus({state:"error",msg:(res&&res.error)||"Booking failed"}); setBought(null); return; }
+    const rec={id:Date.now(),date:new Date().toLocaleDateString(),tracking:res.tracking||newTracking(carrier),carrier,service:qq.label,recipient:{name:o.customer,company:o.company,zip:o.zip,state:o.state,city:o.city,address1:o.address1,phone:o.phone,email:o.email},sender:{...(settings?.sender||{})},fromZip,toZip:o.zip,weight:+weight,pieces:[{weight:+weight,L:box.L,W:box.W,H:box.H}],dims:box,cost:qq.cost,sell:qq.sell,billTo:"sender",status:"Label created",lastScan:"Label created",eta:"—",onTime:true,reference:o.name,bookNumber:res.bookNumber};
     onShipped(rec,o.id);
-    setBought(qq.key);setDone(true);
+    if(res.labelPdfBase64) setLabelPreview({pdf:res.labelPdfBase64,tracking:res.tracking,service:qq.label,carrier});
+    setStatus({state:"booked",msg:"Label created — saved to Shipments."});
   };
   const Info=({k,v})=>(<div className="min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">{k}</div><div className="text-sm text-stone-800 truncate">{v||"—"}</div></div>);
   return (
@@ -1507,14 +1593,18 @@ function OrderDetail({o,setOrders,client,settings,onShipped,goShip}){
           <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Weight (lb)</div><input type="number" value={weight} onChange={e=>{setWeight(+e.target.value);upd({weight:+e.target.value});}} className="w-20 bg-white border border-stone-300 rounded px-2 py-1 text-sm font-mono outline-none focus:border-[#0099FF]"/></div>
           <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Box</div><select value={boxIdx} onChange={e=>setBoxIdx(+e.target.value)} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-[#0099FF]"><option value="-1">Default 12×9×4</option>{boxes.map((b,j)=><option key={b.id} value={j}>{b.name}</option>)}</select></div>
           <label className="flex items-center gap-1.5 text-sm text-stone-600"><input type="checkbox" checked={residential} onChange={e=>setRes(e.target.checked)} className="accent-[#0086E0]"/>Residential</label>
+          <label className="flex items-center gap-1.5 text-[13px] text-stone-600"><input type="checkbox" checked={oneRate} onChange={e=>setOneRate(e.target.checked)} className="accent-[#0086E0]"/>One Rate</label>
           <span className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border ${residential?"text-[#006FBF] bg-[#E6F4FF] border-[#99D6FF]":"text-stone-700 bg-stone-100 border-stone-200"}`}>{residential?<Home className="w-3.5 h-3.5"/>:<Building2 className="w-3.5 h-3.5"/>}{residential?"Residential":"Commercial"}</span>
           <div className="flex-1"/>
+          {rateSrc.live?<span className="text-[11px] text-emerald-600 flex items-center gap-1"><Wifi className="w-3.5 h-3.5"/>Live England rates</span>:canBook?<span className="text-[11px] text-stone-400">{rateSrc.loading?"Loading rates…":""}</span>:<span className="text-[11px] text-amber-600">Demo rates — connect England</span>}
           <button onClick={()=>goShip(o)} className="text-sm bg-stone-200 text-stone-700 rounded px-3 py-1.5 font-medium hover:bg-stone-300 flex items-center gap-1.5"><Edit3 className="w-3.5 h-3.5"/>Open in Ship tab</button>
         </div>
+        {oneRate&&<div className={`text-[12px] rounded px-3 py-2 flex items-center gap-2 ${orBox?"bg-[#E6F4FF] text-[#0072BE] border border-[#99D6FF]":"bg-amber-50 text-amber-700 border border-amber-200"}`}><Boxes className="w-4 h-4 shrink-0"/>{orBox?<span>Qualifies for <b>{orBox.name}</b> — pricing this box only.</span>:<span>Set a box size within One Rate limits (≤2,200 cu in, ≤50 lb).</span>}</div>}
         {(o.shippingService||o.source)&&<div className="text-[12px] text-stone-500 flex items-center gap-1.5 -mt-1"><Truck className="w-3.5 h-3.5 text-stone-400"/>Buyer selected <b className="text-stone-700">{o.shippingService||"Standard"}</b>{o.source?` from ${o.source}`:""} — match it or pick the best rate below.</div>}
         <ServiceList quotes={quotes} best={best} bought={bought} action={ready?printHere:null} label="Buy & print" doneLabel="Printed" ready={ready}/>
-        {done&&<div className="flex items-center gap-2 text-sm text-[#006FBF] bg-[#E6F4FF] border border-[#99D6FF] rounded-lg px-3 py-2"><CheckCircle2 className="w-4 h-4"/>Label created — order moved to Shipments.</div>}
+        {status&&<div className={`flex items-center gap-2 text-sm rounded-lg px-3 py-2 ${status.state==="error"?"text-rose-600 bg-rose-50 border border-rose-200":status.state==="booking"?"text-stone-600 bg-stone-50 border border-stone-200":"text-[#006FBF] bg-[#E6F4FF] border border-[#99D6FF]"}`}>{status.state==="booking"?<Loader2 className="w-4 h-4 animate-spin"/>:status.state==="error"?<AlertTriangle className="w-4 h-4"/>:<CheckCircle2 className="w-4 h-4"/>}{status.msg}</div>}
       </>)}
+      {labelPreview&&<LabelPreviewModal data={labelPreview} onClose={()=>setLabelPreview(null)}/>}
     </div>
   );
 }
@@ -1802,7 +1892,7 @@ function Dashboard({shipments,orders,returns,goTab}){
 const US_STATES=["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
 const SERVICE_OPTIONS={FedEx:["FedEx Ground","FedEx Home Delivery","FedEx 2Day","FedEx Express Saver","FedEx Standard Overnight","FedEx Priority Overnight"]};
 const speedRank=(label)=>{const t=String(label||"").toLowerCase();if(/first overnight/.test(t))return 1;if(/priority overnight/.test(t))return 2;if(/standard overnight|next day/.test(t))return 3;if(/2.?day|2nd day air/.test(t))return 4;if(/express saver|3 day/.test(t))return 5;if(/home|ground/.test(t))return 7;return 6;};
-function Batch({orders,setOrders,client,rules,onShipped}){
+function Batch({orders,setOrders,client,rules,settings,onShipped}){
   const pool=orders.filter(o=>o.status==="unfulfilled");
   const [sel,setSel]=useState(()=>new Set());
   const [rule,setRule]=useState("cheapest");
@@ -1812,8 +1902,16 @@ function Batch({orders,setOrders,client,rules,onShipped}){
   const [filterVals,setFilterVals]=useState(()=>new Set());
   const [groupBy,setGroupBy]=useState("none");
   const [prodQ,setProdQ]=useState("");
+  const [search,setSearch]=useState("");
+  const [wMin,setWMin]=useState("");const [wMax,setWMax]=useState("");
+  const [tMin,setTMin]=useState("");const [tMax,setTMax]=useState("");
   const [done,setDone]=useState(0);
   const [msg,setMsg]=useState("");
+  const [running,setRunning]=useState(false);
+  const [progress,setProgress]=useState({n:0,total:0});
+  const [results,setResults]=useState([]); // [{name, ok, tracking, error, pdf}]
+  const eng=settings&&settings.england;
+  const canBook=eng&&eng.enabled&&eng.apiKey&&eng.customerId;
   const importCSV=(e)=>{
     const file=e.target.files&&e.target.files[0]; if(!file)return;
     const reader=new FileReader();
@@ -1847,25 +1945,72 @@ function Batch({orders,setOrders,client,rules,onShipped}){
   const zoneOf=(o)=>String(zoneEst(client.origin,o.zip));
   const prodOf=(o)=>o.product||o.items||"—";
   const matchFilter=(o)=>{
-    if(filterDim==="none"||filterVals.size===0)return true;
-    if(filterDim==="zone")return filterVals.has(zoneOf(o));
-    if(filterDim==="state")return filterVals.has((o.state||"").toUpperCase());
-    if(filterDim==="product")return filterVals.has(prodOf(o));
-    if(filterDim==="sku")return filterVals.has(o.sku||"—");
-    if(filterDim==="carrier")return filterVals.has(carrierOf(rateFor(o).label));
+    if(filterDim==="zone"&&filterVals.size)return filterVals.has(zoneOf(o));
+    if(filterDim==="state"&&filterVals.size)return filterVals.has((o.state||"").toUpperCase());
+    if(filterDim==="product"&&filterVals.size)return filterVals.has(prodOf(o));
+    if(filterDim==="sku"&&filterVals.size)return filterVals.has(o.sku||"—");
+    if(filterDim==="source"&&filterVals.size)return filterVals.has(o.source||"—");
+    if(filterDim==="service"&&filterVals.size)return filterVals.has(o.shippingService||"—");
+    if(filterDim==="carrier"&&filterVals.size)return filterVals.has(carrierOf(rateFor(o).label));
     return true;
   };
-  const visible=pool.filter(matchFilter);
+  const inRange=(o)=>{
+    const w=+o.weight||0, t=parseFloat(o.total||0);
+    if(wMin!==""&&w<+wMin)return false; if(wMax!==""&&w>+wMax)return false;
+    if(tMin!==""&&t<+tMin)return false; if(tMax!==""&&t>+tMax)return false;
+    const s=search.trim().toLowerCase();
+    if(s&&!((o.name+o.customer+(o.city||"")+(o.state||"")+(o.sku||"")+(o.items||"")+(o.source||"")).toLowerCase().includes(s)))return false;
+    return true;
+  };
+  const visible=pool.filter(o=>matchFilter(o)&&inRange(o));
   const toggleVal=(v)=>setFilterVals(s=>{const n=new Set(s);n.has(v)?n.delete(v):n.add(v);return n;});
   const changeDim=(d)=>{setFilterDim(d);setFilterVals(new Set());setProdQ("");};
   const zonesPresent=Array.from(new Set(pool.map(zoneOf))).sort();
   const productsPresent=Array.from(new Set(pool.map(prodOf))).filter(p=>p&&p!=="—");
   const skusPresent=Array.from(new Set(pool.map(o=>o.sku||"—"))).filter(s=>s&&s!=="—");
+  const sourcesPresent=Array.from(new Set(pool.map(o=>o.source||"—"))).filter(s=>s&&s!=="—");
+  const servicesPresent=Array.from(new Set(pool.map(o=>o.shippingService||"—"))).filter(s=>s&&s!=="—");
   const toggle=id=>setSel(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
   const all=()=>setSel(s=>{const ids=visible.map(o=>o.id);const allOn=ids.every(i=>s.has(i))&&ids.length>0;const n=new Set(s);ids.forEach(i=>allOn?n.delete(i):n.add(i));return n;});
   const rows=visible.filter(o=>sel.has(o.id)).map(o=>({o,q:rateFor(o)}));
   const totals=rows.reduce((a,r)=>({cost:a.cost+(r.q.cost||0),sell:a.sell+(r.q.sell||0)}),{cost:0,sell:0});
-  const run=()=>{rows.forEach(({o,q})=>{const carrier=carrierOf(q.label);onShipped({id:Date.now()+o.id,date:new Date().toLocaleDateString(),tracking:newTracking(carrier),carrier,service:q.label,recipient:{name:o.customer,city:o.city,state:o.state,zip:o.zip},sender:{},fromZip:client.origin,toZip:o.zip,weight:o.weight,dims:{L:12,W:9,H:4},cost:q.cost,sell:q.sell,billTo:"sender",status:"Label created",reference:o.name},o.id);});setDone(rows.length);setSel(new Set());setTimeout(()=>setDone(0),2500);};
+  const run=async()=>{
+    const chosen=visible.filter(o=>sel.has(o.id));
+    if(!chosen.length)return;
+    if(!canBook){ // demo fallback — record locally
+      chosen.forEach((o)=>{const q=rateFor(o);const carrier=carrierOf(q.label);onShipped({id:Date.now()+o.id,date:new Date().toLocaleDateString(),tracking:newTracking(carrier),carrier,service:q.label,recipient:{name:o.customer,city:o.city,state:o.state,zip:o.zip},sender:{...(settings&&settings.sender||{})},fromZip:client.origin,toZip:o.zip,weight:o.weight,dims:{L:12,W:9,H:4},cost:q.cost,sell:q.sell,billTo:"sender",status:"Label created",reference:o.name},o.id);});
+      setDone(chosen.length);setSel(new Set());setTimeout(()=>setDone(0),2500);return;
+    }
+    setRunning(true);setResults([]);setProgress({n:0,total:chosen.length});
+    const out=[];
+    for(let i=0;i<chosen.length;i++){
+      const o=chosen[i];
+      setProgress({n:i+1,total:chosen.length});
+      // fetch real rates for this order, pick per rule
+      let picked=null;
+      try{
+        const res=await ratesForOrder(o,{residential:true,weightLb:o.weight,fromZip:(settings.sender&&settings.sender.zip)||client.origin,sender:settings.sender},eng);
+        let qs=((res&&res.rates)||[]).filter(q=>q.carrier==="FedEx"&&!/first\s*overnight/i.test(q.label||"")).map(q=>({...q,sell:Math.round((q.cost||0)*(1+(client.markup||0)/100)*100)/100}));
+        if(rule==="ground")picked=qs.filter(q=>/ground|home/i.test(q.label)).sort((a,b)=>a.cost-b.cost)[0];
+        else if(rule==="fastest")picked=qs.slice().sort((a,b)=>speedRank(a.label)-speedRank(b.label)||a.cost-b.cost)[0];
+        else if(rule==="specific")picked=qs.find(q=>String(q.label).toLowerCase().includes(specSvc.toLowerCase().replace(/^fedex\s*/,"")))||qs[0];
+        else picked=qs.slice().sort((a,b)=>a.cost-b.cost)[0];
+      }catch(e){}
+      if(!picked){ out.push({name:o.name,ok:false,error:"No rate returned"}); setResults([...out]); continue; }
+      const need=[]; if(!o.customer&&!o.company)need.push("name"); if(String(o.phone||"").replace(/\D/g,"").length<10)need.push("phone"); if(!o.email)need.push("email");
+      if(need.length){ out.push({name:o.name,ok:false,error:"Missing "+need.join(", ")}); setResults([...out]); continue; }
+      const res=await bookOrderLabel(o,{quote:picked,weightLb:o.weight,residential:true,sender:settings.sender},eng,settings.sender);
+      if(res&&res.ok){
+        const carrier=carrierOf(picked.label);
+        onShipped({id:Date.now()+o.id,date:new Date().toLocaleDateString(),tracking:res.tracking||newTracking(carrier),carrier,service:picked.label,recipient:{name:o.customer,company:o.company,city:o.city,state:o.state,zip:o.zip,address1:o.address1,phone:o.phone,email:o.email},sender:{...(settings.sender||{})},fromZip:(settings.sender&&settings.sender.zip)||client.origin,toZip:o.zip,weight:o.weight,dims:{L:12,W:9,H:4},cost:picked.cost,sell:picked.sell,billTo:"sender",status:"Label created",reference:o.name,bookNumber:res.bookNumber},o.id);
+        out.push({name:o.name,ok:true,tracking:res.tracking,service:picked.label,pdf:res.labelPdfBase64||null});
+      } else out.push({name:o.name,ok:false,error:(res&&res.error)||"Booking failed"});
+      setResults([...out]);
+    }
+    setRunning(false);
+    setSel(new Set());
+  };
+  const printAll=()=>{ results.filter(r=>r.ok&&r.pdf).forEach((r,i)=>setTimeout(()=>openLabelPdf(r.pdf),i*400)); };
   const keyOf=(o)=>{if(groupBy==="sku")return o.sku||"—";if(groupBy==="product")return prodOf(o);if(groupBy==="zone")return "Zone "+zoneOf(o);if(groupBy==="service")return rateFor(o).label;if(groupBy==="carrier")return carrierOf(rateFor(o).label);if(groupBy==="state")return o.state||"—";return "All orders";};
   const groups={}; visible.forEach(o=>{const k=keyOf(o);(groups[k]=groups[k]||[]).push(o);});
   const groupKeys=Object.keys(groups).sort();
@@ -1904,7 +2049,7 @@ function Batch({orders,setOrders,client,rules,onShipped}){
       <div className="border border-stone-200 rounded-lg bg-white p-3 space-y-3">
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <span className="text-[11px] uppercase tracking-widest text-stone-400">Filter to</span>
-          {[["none","Everything"],["zone","Zone"],["state","State"],["product","Product"],["sku","SKU"],["carrier","Carrier"]].map(([v,l])=>
+          {[["none","Everything"],["zone","Zone"],["state","State"],["product","Product"],["sku","SKU"],["source","Source"],["service","Requested service"],["carrier","Carrier"]].map(([v,l])=>
             <button key={v} onClick={()=>changeDim(v)} className={`text-xs rounded-lg px-2.5 py-1.5 border font-medium ${filterDim===v?"bg-[#E6F4FF] border-[#99D6FF] text-[#006FBF]":"bg-white border-stone-200 text-stone-500 hover:bg-stone-50"}`}>{l}</button>
           )}
           {filterDim!=="none"&&filterVals.size>0&&<button onClick={()=>setFilterVals(new Set())} className="text-xs text-stone-400 hover:text-stone-700 underline ml-1">clear</button>}
@@ -1913,7 +2058,15 @@ function Batch({orders,setOrders,client,rules,onShipped}){
         {filterDim==="state"&&<div className="flex flex-wrap gap-1.5 max-h-44 overflow-auto">{US_STATES.map(s=>{const n=pool.filter(o=>(o.state||"").toUpperCase()===s).length;return <Chip key={s} on={filterVals.has(s)} onClick={()=>toggleVal(s)}>{s}{n?` · ${n}`:""}</Chip>;})}</div>}
         {filterDim==="product"&&<div className="space-y-2"><div className="relative"><Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400"/><input value={prodQ} onChange={e=>setProdQ(e.target.value)} placeholder="Search products…" className="w-full bg-white border border-stone-200 rounded pl-8 pr-2 py-1.5 text-sm outline-none focus:border-[#0099FF]"/></div><div className="flex flex-wrap gap-1.5 max-h-44 overflow-auto">{productsPresent.filter(p=>!prodQ.trim()||p.toLowerCase().includes(prodQ.toLowerCase())).map(p=><Chip key={p} on={filterVals.has(p)} onClick={()=>toggleVal(p)}>{p} · {pool.filter(o=>prodOf(o)===p).length}</Chip>)}{productsPresent.length===0&&<span className="text-xs text-stone-400">No product names on these orders.</span>}</div></div>}
         {filterDim==="sku"&&<div className="flex flex-wrap gap-1.5 max-h-44 overflow-auto">{skusPresent.map(s=><Chip key={s} on={filterVals.has(s)} onClick={()=>toggleVal(s)}>{s} · {pool.filter(o=>(o.sku||"—")===s).length}</Chip>)}{skusPresent.length===0&&<span className="text-xs text-stone-400">No SKUs on these orders.</span>}</div>}
-        {filterDim==="carrier"&&<div className="flex flex-wrap gap-1.5">{["FedEx","UPS","DHL"].map(c=><Chip key={c} on={filterVals.has(c)} onClick={()=>toggleVal(c)}>{c}</Chip>)}</div>}
+        {filterDim==="source"&&<div className="flex flex-wrap gap-1.5">{sourcesPresent.map(s=><Chip key={s} on={filterVals.has(s)} onClick={()=>toggleVal(s)}>{s} · {pool.filter(o=>(o.source||"—")===s).length}</Chip>)}{sourcesPresent.length===0&&<span className="text-xs text-stone-400">No sources on these orders.</span>}</div>}
+        {filterDim==="service"&&<div className="flex flex-wrap gap-1.5">{servicesPresent.map(s=><Chip key={s} on={filterVals.has(s)} onClick={()=>toggleVal(s)}>{s} · {pool.filter(o=>(o.shippingService||"—")===s).length}</Chip>)}{servicesPresent.length===0&&<span className="text-xs text-stone-400">No requested services on these orders.</span>}</div>}
+        {filterDim==="carrier"&&<div className="flex flex-wrap gap-1.5">{["FedEx"].map(c=><Chip key={c} on={filterVals.has(c)} onClick={()=>toggleVal(c)}>{c}</Chip>)}</div>}
+        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-stone-100">
+          <div className="relative flex-1 min-w-[180px]"><Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, city, SKU, items…" className="w-full bg-white border border-stone-200 rounded pl-8 pr-2 py-1.5 text-sm outline-none focus:border-[#0099FF]"/></div>
+          <div className="flex items-center gap-1 text-xs text-stone-500">Weight<input type="number" value={wMin} onChange={e=>setWMin(e.target.value)} placeholder="min" className="w-16 bg-white border border-stone-200 rounded px-2 py-1 outline-none focus:border-[#0099FF]"/>–<input type="number" value={wMax} onChange={e=>setWMax(e.target.value)} placeholder="max" className="w-16 bg-white border border-stone-200 rounded px-2 py-1 outline-none focus:border-[#0099FF]"/>lb</div>
+          <div className="flex items-center gap-1 text-xs text-stone-500">Total $<input type="number" value={tMin} onChange={e=>setTMin(e.target.value)} placeholder="min" className="w-16 bg-white border border-stone-200 rounded px-2 py-1 outline-none focus:border-[#0099FF]"/>–<input type="number" value={tMax} onChange={e=>setTMax(e.target.value)} placeholder="max" className="w-16 bg-white border border-stone-200 rounded px-2 py-1 outline-none focus:border-[#0099FF]"/></div>
+          {(search||wMin||wMax||tMin||tMax)&&<button onClick={()=>{setSearch("");setWMin("");setWMax("");setTMin("");setTMax("");}} className="text-xs text-stone-400 hover:text-stone-700 underline">clear</button>}
+        </div>
         <div className="flex items-center gap-3 pt-1 border-t border-stone-100 flex-wrap">
           <span className="text-[11px] uppercase tracking-widest text-stone-400">Group rows by</span>
           <select value={groupBy} onChange={e=>setGroupBy(e.target.value)} className="bg-white border border-stone-200 rounded px-2 py-1 text-sm outline-none focus:border-[#0099FF]"><option value="none">None</option><option value="zone">Zone</option><option value="state">State</option><option value="product">Product</option><option value="sku">SKU</option><option value="carrier">Carrier</option><option value="service">Service</option></select>
@@ -1932,11 +2085,17 @@ function Batch({orders,setOrders,client,rules,onShipped}){
               {groups[k].map(OrderRow)}
             </div>))}
       </div>
+      {results.length>0&&<div className="border border-stone-200 rounded-lg bg-white p-3 space-y-1.5">
+        <div className="flex items-center justify-between"><div className="text-sm font-semibold text-stone-700">Batch results — {results.filter(r=>r.ok).length}/{results.length} booked</div>{results.some(r=>r.ok&&r.pdf)&&<button onClick={printAll} className="text-sm bg-stone-900 text-white rounded px-3 py-1.5 font-medium hover:bg-stone-800 flex items-center gap-1.5"><Printer className="w-4 h-4"/>Print all labels</button>}</div>
+        {results.map((r,i)=><div key={i} className={`text-[12px] flex items-center gap-2 ${r.ok?"text-emerald-700":"text-rose-600"}`}>{r.ok?<CheckCircle2 className="w-3.5 h-3.5 shrink-0"/>:<AlertTriangle className="w-3.5 h-3.5 shrink-0"/>}<b>{r.name}</b>{r.ok?<span className="font-mono">{r.service} · {r.tracking}</span>:<span>{r.error}</span>}</div>)}
+      </div>}
       <div className="flex flex-wrap items-center gap-3 sm:gap-4 border border-stone-200 rounded-lg bg-white p-3 sticky bottom-2 shadow-sm">
         <div className="text-sm"><span className="font-semibold">{sel.size}</span> selected</div>
-        <div className="text-sm text-stone-500">total <span className="font-mono text-stone-900">{money(totals.sell)}</span></div>
+        <div className="text-sm text-stone-500">est. total <span className="font-mono text-stone-900">{money(totals.sell)}</span></div>
+        {!canBook&&<span className="text-[11px] text-amber-600">Demo — connect England to book real labels</span>}
         <div className="flex-1"/>
-        <button disabled={!sel.size} onClick={run} className="text-sm bg-stone-900 text-white rounded px-4 py-2 font-medium hover:bg-stone-800 disabled:opacity-40 flex items-center gap-1.5"><Printer className="w-4 h-4"/>Print {sel.size||""} label{sel.size===1?"":"s"}</button>
+        {running&&<span className="text-xs text-stone-500 flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin"/>Booking {progress.n}/{progress.total}…</span>}
+        <button disabled={!sel.size||running} onClick={run} className="text-sm bg-stone-900 text-white rounded px-4 py-2 font-medium hover:bg-stone-800 disabled:opacity-40 flex items-center gap-1.5"><Printer className="w-4 h-4"/>{canBook?"Book & print":"Print"} {sel.size||""} label{sel.size===1?"":"s"}</button>
       </div>
     </div>
   );
