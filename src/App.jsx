@@ -9,7 +9,7 @@ const FW_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfIAAAAsCAYAAACe0jo
 
 
 const DEFAULT_BRAND={name1:"Shipping",name2:"Cloud",primary:FW_BLUE,dark:FW_DARK,partnerLabel:"by",logo:FW_LOGO,showLogo:true};
-const BUILD_TAG="addr-v37";
+const BUILD_TAG="addr-v44";
 
 /* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
@@ -74,7 +74,7 @@ const newTracking=carrier=>carrier==="UPS"?"1Z"+Math.random().toString(36).slice
 const RATES_ENDPOINT="/.netlify/functions/quote";
 async function getLiveRates(s,england){
   if(!england||!england.enabled) return null;
-  const body={carriers:s.carriers||"fedex",fromZip:s.fromZip,toZip:s.toZip,fromCountry:s.fromCountry||"US",toCountry:s.toCountry||"US",residential:!!s.residential,signature:!!s.signature,signatureOption:s.signatureOption||(s.signature?"direct":"none"),packageTypeCode:s.packageTypeCode||"",pieces:(s.pieces||[]).map(p=>({weight:+p.weight||1,length:+p.L||12,width:+p.W||9,height:+p.H||4})),account:{base:england.base,apiKey:england.apiKey,customerId:england.customerId}};
+  const body={carriers:s.carriers||"fedex",fromZip:s.fromZip,toZip:s.toZip,fromCountry:s.fromCountry||"US",toCountry:s.toCountry||"US",residential:!!s.residential,signature:!!s.signature,signatureOption:s.signatureOption||(s.signature?"direct":"none"),saturdayDelivery:!!s.saturdayDelivery,insuranceAmount:s.insuranceAmount||null,packageTypeCode:s.packageTypeCode||"",pieces:(s.pieces||[]).map(p=>({weight:+p.weight||1,length:+p.L||12,width:+p.W||9,height:+p.H||4})),account:{base:england.base,apiKey:england.apiKey,customerId:england.customerId}};
   try{
     const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),12000);
     const r=await fetch(RATES_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:ctrl.signal});
@@ -713,10 +713,10 @@ function usePersist(key,initial){
 export default function App(){
   const [tab,setTab]=useState("ship");
   useEffect(()=>{ try{
-    if(localStorage.getItem("scPurge")!=="1"){
+    if(localStorage.getItem("scPurge")!=="2"){
       ["orders","shipments","returns","ledger","invoices","emails","drafts","pendingShips","rules","accounts"].forEach(k=>localStorage.removeItem(k));
       try{ const st=JSON.parse(localStorage.getItem("settings")||"null"); if(st){ st.addresses=[]; localStorage.setItem("settings",JSON.stringify(st)); } }catch(e){}
-      localStorage.setItem("scPurge","1");
+      localStorage.setItem("scPurge","2");
       window.location.reload();
     }
   }catch(e){} },[]);
@@ -902,29 +902,33 @@ export default function App(){
 function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDrafts,prefill,clearPrefill,onShipped,onPending,logEmail,onQuickQuote}){
   const empty={country:"United States",name:"",company:"",zip:"",state:"",city:"",address1:"",address2:"",address3:"",phone:"",email:""};
   const [sender,setSender]=useState({country:"United States",...settings.sender,address2:"",address3:""});
-  const [receiver,setReceiver]=useState(empty);
-  const [reference,setReference]=useState("");
-  const [invoiceNo,setInvoiceNo]=useState("");
-  const [poNo,setPoNo]=useState("");
+  const [receiver,setReceiver]=usePersist("ship.receiver",empty);
+  const [reference,setReference]=usePersist("ship.reference","");
+  const [invoiceNo,setInvoiceNo]=usePersist("ship.invoiceNo","");
+  const [poNo,setPoNo]=usePersist("ship.poNo","");
   const [returnDiff,setReturnDiff]=useState(false);
-  const [pieces,setPieces]=useState([{weight:"",L:"",W:"",H:""}]);
-  const [insurance,setInsurance]=useState("");
-  const [residential,setRes]=useState(true);
+  const [pieces,setPieces]=usePersist("ship.pieces",[{weight:"",L:"",W:"",H:""}]);
+  const [insurance,setInsurance]=usePersist("ship.insurance","");
+  const [residential,setRes]=usePersist("ship.residential",true);
   const [resTouched,setResTouched]=useState(false);
-  const [signature,setSig]=useState(false);
-  const [sigOption,setSigOption]=useState("none");
-  const [saturday,setSat]=useState(false);
+  const [signature,setSig]=usePersist("ship.signature",false);
+  const [sigOption,setSigOption]=usePersist("ship.sigOption","none");
+  const [saturday,setSat]=usePersist("ship.saturday",false);
   const [orderSort,setOrderSort]=useState("date");
-  const [billTo,setBillTo]=useState(settings.defaultBillTo||"sender");
-  const [thirdAcct,setThirdAcct]=useState("");
+  const [ordersOpen,setOrdersOpen]=usePersist("ship.ordersOpen",false);
+  const [orderQ,setOrderQ]=useState("");
+  const [storeFilter,setStoreFilter]=useState("all");
+  const [dateFrom,setDateFrom]=useState("");
+  const [dateTo,setDateTo]=useState("");
+  const [billTo,setBillTo]=usePersist("ship.billTo",settings.defaultBillTo||"sender");
+  const [thirdAcct,setThirdAcct]=usePersist("ship.thirdAcct","");
   const [bought,setBought]=useState(null);
   const [shipStatus,setShipStatus]=useState(null);
   const [labelPreview,setLabelPreview]=useState(null); // {pdf, tracking, service, carrier}
   const [shipDate,setShipDate]=useState(()=>new Date().toISOString().slice(0,10));
-  const [oneRate,setOneRate]=useState(false);
-  const orBox=oneRate?oneRateBoxFor(pieces[0]&&pieces[0].L,pieces[0]&&pieces[0].W,pieces[0]&&pieces[0].H,(+(pieces[0]&&pieces[0].weight)||0)+(+(pieces[0]&&pieces[0].oz)||0)/16):null;
+  const orBox=oneRateBoxFor(pieces[0]&&pieces[0].L,pieces[0]&&pieces[0].W,pieces[0]&&pieces[0].H,(+(pieces[0]&&pieces[0].weight)||0)+(+(pieces[0]&&pieces[0].oz)||0)/16);
   const [recErrors,setRecErrors]=useState([]);
-  const [selectedOrder,setSelectedOrder]=useState(null);
+  const [selectedOrder,setSelectedOrder]=usePersist("ship.selectedOrder",null);
   const [verify,setVerify]=useState(null);
   const [verifyNonce,setVerifyNonce]=useState(0);
   const [saved,setSaved]=useState(false);
@@ -932,6 +936,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
   const [emailMsg,setEmailMsg]=useState(settings.emailMessage||"");
   const [msgSaved,setMsgSaved]=useState(false);
   const [sent,setSent]=useState("");
+  useEffect(()=>{ if(receiver.email&&!String(emailTo||"").trim()) setEmailTo(receiver.email); },[receiver.email]);
   const [customs,setCustoms]=useState({reason:"Sale",incoterm:INCOTERMS[0],dutiesBill:"receiver",lines:[{desc:"",hts:"",origin:"United States",qty:1,value:"",weight:""}]});
   const [showCI,setShowCI]=useState(false);
 
@@ -993,7 +998,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
 
   const swap=()=>{const s=sender;setSender(receiver);setReceiver(s);};
   const ready=/^\d{5}/.test(receiver.zip||"")&&totalWeight>0;
-  const shipment={fromZip:sender.zip||client.origin,toZip:receiver.zip,pieces:pieces.map(p=>({...p,weight:pw(p)})),residential,signature,signatureOption:sigOption,saturdayDelivery:saturday,intl,packageTypeCode:orBox?orBox.code:""};
+  const shipment={fromZip:sender.zip||client.origin,toZip:receiver.zip,pieces:pieces.map(p=>({...p,weight:pw(p)})),residential,signature,signatureOption:sigOption,saturdayDelivery:saturday,insuranceAmount:insurance||null,intl,packageTypeCode:""};
   // Front screen shows FedEx only (until a USPS/UPS/DAP deal is added). Blank-price skeleton before rates load.
   const FEDEX_SKELETON=[
     {key:"fedex_ground",carrier:"FedEx",label:"FedEx Ground®",cost:null},
@@ -1005,6 +1010,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
   ];
   const localQuotes=()=>quoteRates(shipment).filter(q=>q.carrier==="FedEx");
   const [rateSrc,setRateSrc]=useState({rates:[],live:false,loading:false,error:null});
+  const [orRates,setOrRates]=useState([]);
   const [fxTransit,setFxTransit]=useState({});
   useEffect(()=>{
     let cancel=false;
@@ -1012,6 +1018,18 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
     fedexTransit(shipment).then(m=>{ if(!cancel) setFxTransit(m||{}); });
     return ()=>{cancel=true;};
   },[receiver.zip,sender.zip,residential,JSON.stringify(pieces)]);
+  // One Rate services: automatically fetch flat-rate pricing for the qualifying box and show them alongside regular services
+  useEffect(()=>{
+    let cancel=false; setOrRates([]);
+    const eng=settings.england;
+    if(!ready||!orBox||!(eng&&eng.enabled&&eng.apiKey&&eng.customerId))return;
+    getLiveRates({...shipment,packageTypeCode:orBox.code},eng).then(res=>{ if(cancel)return;
+      if(res&&res.live&&res.rates&&res.rates.length){
+        setOrRates(res.rates.filter(q=>q.carrier==="FedEx").map(q=>({...q,key:"or_"+q.key,label:q.label.replace(/®?$/,"")+" · One Rate",_oneRate:true,packageTypeCode:orBox.code})));
+      }
+    });
+    return ()=>{cancel=true;};
+  },[JSON.stringify(pieces),receiver.zip,sender.zip,residential,settings.england,orBox&&orBox.code]);
   useEffect(()=>{
     let cancel=false;
     if(!ready){setRateSrc({rates:[],live:false,loading:false,error:null});return;}
@@ -1024,19 +1042,20 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
       });
     } else setRateSrc({rates:localQuotes(),live:false,loading:false,error:null});
     return ()=>{cancel=true;};
-  },[JSON.stringify(pieces),receiver.zip,sender.zip,residential,signature,intl,settings.england,oneRate,orBox&&orBox.code]);
+  },[JSON.stringify(pieces),receiver.zip,sender.zip,residential,signature,saturday,insurance,intl,settings.england]);
   // address classified yet? only then do we hide the non-matching ground product
   const addrClassified=!!(resTouched||(verify&&verify.type));
   const quotes=useMemo(()=>{
     let rates=(rateSrc.rates||[]).filter(q=>q.carrier==="FedEx");
     let list=rates.length?rates:FEDEX_SKELETON.slice();   // skeleton (blank prices) until live rates arrive
+    list=list.concat((orRates||[]).filter(q=>q.carrier==="FedEx"));   // One Rate services auto-appear when the box qualifies
     list=list.filter(q=>!/first\s*overnight/i.test(q.label||""));   // never offer First Overnight
     if(addrClassified){
       list=list.filter(q=>{const k=canonSvc(q.label);if(residential&&k==="ground")return false;if(!residential&&k==="home")return false;return true;});
     }
-    return list.map(q=>{const m=fxTransit[canonSvc(q.label)];const cost=q.cost;const real=!!(m&&m.days!=null);const days=real?m.days:estTransitDays(q.label,q.zone);return {...q,sell:cost!=null?Math.round(cost*(1+client.markup/100)*100)/100:null,fxDays:days,fxDate:real?m.date:undefined,fxLive:real};})
+    return list.map(q=>{const m=fxTransit[canonSvc(q.label)];const cost=q.cost;const real=!!(m&&m.days!=null);const days=real?m.days:(ready?estTransitDays(q.label,q.zone):null);return {...q,sell:cost!=null?Math.round(cost*(1+client.markup/100)*100)/100:null,fxDays:days,fxDate:real?m.date:undefined,fxLive:real};})
       .sort((a,b)=>{if(a.sell==null&&b.sell==null)return 0;if(a.sell==null)return 1;if(b.sell==null)return -1;return a.sell-b.sell;});
-  },[rateSrc,client.markup,fxTransit,residential,addrClassified]);
+  },[rateSrc,orRates,client.markup,fxTransit,residential,addrClassified]);
   const best=(rateSrc.live&&quotes.length&&quotes[0].sell!=null)?quotes[0].key:null;
 
   const buildRec=(q,carrier,extra)=>({id:Date.now(),date:new Date().toLocaleDateString(),tracking:(extra&&extra.tracking)||newTracking(carrier),carrier,service:q.label,recipient:{...receiver},sender:{...sender},fromZip:sender.zip,toZip:receiver.zip,weight:totalWeight,pieces:pieces.map(p=>({...p})),dims:pieces[0],insurance,cost:q.cost,sell:q.sell,billTo,thirdAcct,status:"Label created",lastScan:"Label created",eta:"—",onTime:true,reference,invoiceNo,poNo,residential,intl,bookNumber:extra&&extra.bookNumber,customs:intl?{...customs,total:customsTotal,ci:"CI-"+rnd(5)}:null});
@@ -1069,7 +1088,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
     setBought(q.key);setShipStatus({state:"booking",key:q.key});
     if(!q.serviceCode||!q.carrierCode){setShipStatus({state:"error",key:q.key,msg:"Enter the shipment details so live rates load, then print (need the carrier/service from the rate)."});setBought(null);return;}
     const order={reference:reference||invoiceNo||"",orderNumber:invoiceNo||reference||"",shipmentDate:shipDate,
-      carrierCode:q.carrierCode,serviceCode:q.serviceCode,packageTypeCode:(oneRate&&orBox)?orBox.code:(q.packageTypeCode||""),
+      carrierCode:q.carrierCode,serviceCode:q.serviceCode,packageTypeCode:q.packageTypeCode||"",
       shippingService:q.label,shippingTotal:String(q.sell??q.cost??"0.00"),contentDescription:"Merchandise",
       signatureOption:sigOption,saturdayDelivery:saturday,insuranceAmount:insurance||null,residential,
       billingParty:billTo==="third"?"third_party":(billTo==="receiver"?"receiver":"sender"),billingAccount:billTo==="third"?(thirdAcct||null):null,
@@ -1094,24 +1113,58 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
     if(orderSort==="weight")return (b.weight||0)-(a.weight||0);
     return String(b.id).localeCompare(String(a.id));
   });},[orders,orderSort]);
-  const saveDraft=()=>{const d={id:Date.now(),label:reference||receiver.name||receiver.city||"Untitled",when:new Date().toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}),to:`${receiver.city||""}${receiver.state?", "+receiver.state:""}`,snap:{sender,receiver,reference,invoiceNo,poNo,pieces,residential,signature,billTo,thirdAcct,insurance,selectedOrder,customs}};setDrafts(p=>[d,...p]);setSaved(true);setTimeout(()=>setSaved(false),1600);};
+  const orderTime=(o)=>{const d=o&&o.date||"";let t=Date.parse(d);if(isNaN(t)){const m=String(d).match(/^(\d{1,2})\/(\d{1,2})/);if(m)t=new Date(new Date().getFullYear(),+m[1]-1,+m[2]).getTime();}return isNaN(t)?0:t;};
+  const storesPresent=useMemo(()=>Array.from(new Set(orders.filter(o=>o.status==="unfulfilled").map(o=>o.source||"Manual"))).filter(Boolean),[orders]);
+  const ordersFiltered=useMemo(()=>{
+    const t=orderQ.trim().toLowerCase();
+    const from=dateFrom?new Date(dateFrom+"T00:00:00").getTime():null;
+    const to=dateTo?new Date(dateTo+"T23:59:59").getTime():null;
+    return ordersToShow.filter(o=>{
+      if(storeFilter!=="all"&&(o.source||"Manual")!==storeFilter)return false;
+      if(from||to){const ot=orderTime(o);if(from&&ot<from)return false;if(to&&ot>to)return false;}
+      if(t&&!((o.name||"")+(o.customer||"")+(o.city||"")+(o.state||"")+(o.zip||"")+(o.sku||"")+(o.items||"")+(o.source||"")).toLowerCase().includes(t))return false;
+      return true;
+    });
+  },[ordersToShow,orderQ,storeFilter,dateFrom,dateTo]);
+  const [naming,setNaming]=useState(false);
+  const [draftName,setDraftName]=useState("");
+  const commitDraft=(title)=>{const d={id:Date.now(),label:title||reference||receiver.name||receiver.city||"Untitled",when:new Date().toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}),to:`${receiver.city||""}${receiver.state?", "+receiver.state:""}`,snap:{sender,receiver,reference,invoiceNo,poNo,pieces,residential,signature,billTo,thirdAcct,insurance,selectedOrder,customs}};setDrafts(p=>[d,...p]);setNaming(false);setDraftName("");setSaved(true);setTimeout(()=>setSaved(false),1600);};
+  const saveDraft=()=>{setDraftName(reference||receiver.name||receiver.city||"");setNaming(true);};
   const newShipment=()=>{setReceiver({...empty,zip:""});setReference("");setInvoiceNo("");setPoNo("");setPieces([{weight:"",L:"",W:"",H:""}]);setInsurance("");setRes(true);setResTouched(false);setSig(false);setSigOption("none");setSat(false);setBillTo(settings.defaultBillTo||"sender");setThirdAcct("");setSelectedOrder(null);setVerify(null);setBought(null);setEmailTo("");setReturnDiff(false);};
   return (
-    <div className="flex flex-col lg:flex-row gap-4">
-      <aside className="lg:w-64 shrink-0 space-y-2">
-        <div className="flex items-center justify-between gap-2 mb-1">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-stone-500"><ShoppingBag className="w-4 h-4"/>Orders</div>
+    <div className="flex flex-row gap-4 items-start">
+      {ordersOpen?(
+      <aside className="w-60 shrink-0 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <button onClick={()=>setOrdersOpen(false)} className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-stone-500 hover:text-stone-700"><ChevronDown className="w-4 h-4"/><ShoppingBag className="w-4 h-4"/>Orders{ordersToShow.length?<span className="text-stone-400 normal-case font-normal">· {ordersToShow.length}</span>:""}</button>
           <select value={orderSort} onChange={e=>setOrderSort(e.target.value)} className="bg-white border border-stone-200 rounded px-1.5 py-1 text-[11px] outline-none focus:border-[#0099FF]"><option value="date">Newest</option><option value="total">Total</option><option value="customer">Name</option><option value="state">State</option><option value="weight">Weight</option></select>
         </div>
-        {ordersToShow.length===0?<div className="border border-dashed border-stone-300 rounded-lg p-4 text-center text-xs text-stone-400">No unfulfilled orders.</div>:ordersToShow.map(o=>(
+        <div className="relative"><Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400"/><input value={orderQ} onChange={e=>setOrderQ(e.target.value)} placeholder="Search orders" className="w-full bg-white border border-stone-200 rounded-lg pl-8 pr-2 py-1.5 text-sm outline-none focus:border-[#0099FF]"/></div>
+        <div className="flex items-center gap-1.5">
+          <select value={storeFilter} onChange={e=>setStoreFilter(e.target.value)} className="flex-1 bg-white border border-stone-200 rounded px-1.5 py-1 text-[11px] outline-none focus:border-[#0099FF]"><option value="all">All stores</option>{storesPresent.map(s=><option key={s} value={s}>{s}</option>)}</select>
+          <button onClick={()=>{const t=new Date().toISOString().slice(0,10);setDateFrom(t);setDateTo(t);}} className="text-[11px] font-medium bg-[#E6F4FF] text-[#006FBF] border border-[#99D6FF] rounded px-2 py-1 hover:bg-[#D6ECFF] shrink-0">Today</button>
+        </div>
+        <div className="flex items-center gap-1 text-[10px] text-stone-400">
+          <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className="flex-1 bg-white border border-stone-200 rounded px-1.5 py-1 text-[11px] text-stone-600 outline-none focus:border-[#0099FF]"/>
+          <span>–</span>
+          <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} className="flex-1 bg-white border border-stone-200 rounded px-1.5 py-1 text-[11px] text-stone-600 outline-none focus:border-[#0099FF]"/>
+          {(dateFrom||dateTo||storeFilter!=="all")&&<button onClick={()=>{setDateFrom("");setDateTo("");setStoreFilter("all");}} className="text-stone-400 hover:text-stone-700 shrink-0"><X className="w-3.5 h-3.5"/></button>}
+        </div>
+        <div className="space-y-2 max-h-[calc(100vh-220px)] overflow-auto pr-0.5">
+        {ordersFiltered.length===0?<div className="border border-dashed border-stone-300 rounded-lg p-4 text-center text-xs text-stone-400">{ordersToShow.length===0?"No unfulfilled orders.":"No orders match."}</div>:ordersFiltered.map(o=>(
           <button key={o.id} onClick={()=>applyOrder(o)} className={`w-full text-left border rounded-lg p-3 transition-colors ${selectedOrder===o.id?"border-[#33ABFF] bg-[#E6F4FF]":"border-stone-200 bg-white hover:border-stone-300"}`}>
             <div className="flex items-center justify-between"><span className="font-semibold text-sm text-stone-800 flex items-center gap-1.5">{o.name}{o.source&&<span className="text-[9px] uppercase tracking-wide text-stone-400 border border-stone-200 rounded px-1">{o.source}</span>}</span><span className="font-mono text-xs text-stone-400">${o.total}</span></div>
             <div className="text-xs text-stone-600 mt-0.5">{o.customer}</div>
             <div className="text-[11px] text-stone-400 mt-0.5">{o.city}, {o.state} {o.zip}</div>
             <div className="text-[11px] text-stone-400 truncate">{o.items}</div>
+            {o.date&&<div className="flex items-center gap-1 text-[10px] text-stone-400 mt-1 pt-1 border-t border-stone-100"><Calendar className="w-3 h-3"/>{o.date}</div>}
           </button>
         ))}
+        </div>
       </aside>
+      ):(
+        <button onClick={()=>setOrdersOpen(true)} title="Show orders" className="shrink-0 self-start flex flex-col items-center gap-1 text-stone-500 hover:text-stone-700 hover:border-stone-300 border border-stone-200 bg-white rounded-lg px-1.5 py-2 w-9"><ChevronRight className="w-4 h-4"/><ShoppingBag className="w-4 h-4"/>{ordersToShow.length?<span className="text-[10px] font-bold text-[#0086E0] leading-none">{ordersToShow.length}</span>:null}</button>
+      )}
       <div className="flex-1 min-w-0 space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-base font-semibold text-stone-800 flex items-center gap-2"><Package className="w-4 h-4 text-[#0086E0]"/>Create shipment</h1>
@@ -1127,9 +1180,9 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
           <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">Reference #</div><input value={reference} onChange={e=>setReference(e.target.value)} placeholder="order / ref" className="w-full bg-transparent text-sm outline-none border-b border-stone-200 focus:border-[#0099FF] py-1 placeholder-stone-300"/></div>
         </div>
         <div className="relative grid lg:grid-cols-2 gap-4">
-          <AddressCard title="Sender" data={sender} set={setSender} addresses={settings.addresses}/>
+          <AddressCard title="Sender" data={sender} set={setSender} addresses={settings.addresses} onSave={(d)=>{ if(!d.name&&!d.company)return; const entry={id:"ab"+Date.now(),name:d.name||"",company:d.company||"",address1:d.address1||"",address2:d.address2||"",city:d.city||"",state:d.state||"",zip:d.zip||"",country:d.country||"United States",phone:d.phone||"",email:d.email||"",acctCarrier:(billTo==="third"&&thirdAcct)?"FedEx":"",acctNum:(billTo==="third"&&thirdAcct)?thirdAcct:""}; setSettings(p=>{ const ex=(p.addresses||[]).filter(a=>!(a.address1===entry.address1&&a.zip===entry.zip)); return {...p,addresses:[entry,...ex]}; }); }}/>
           <button onClick={swap} title="Swap" className="hidden lg:flex absolute left-1/2 top-6 -translate-x-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-stone-200 border border-stone-300 hover:bg-stone-300 text-stone-700"><ArrowLeftRight className="w-4 h-4"/></button>
-          <AddressCard title="Receiver" data={receiver} set={setReceiver} required errorFields={recErrors} contactFallback={{phone:sender.phone,email:sender.email}} addresses={settings.addresses} onSave={(d)=>{ if(!d.name&&!d.company)return; const entry={id:"ab"+Date.now(),name:d.name||"",company:d.company||"",address1:d.address1||"",address2:d.address2||"",city:d.city||"",state:d.state||"",zip:d.zip||"",country:d.country||"United States",phone:d.phone||"",email:d.email||""}; setSettings(p=>{ const ex=(p.addresses||[]).filter(a=>!(a.address1===entry.address1&&a.zip===entry.zip)); return {...p,addresses:[entry,...ex]}; }); }} onPick={(a)=>{ if(a&&a.acctNum){setBillTo("third");setThirdAcct(a.acctNum);} else {setBillTo(settings.defaultBillTo||"sender");setThirdAcct("");} }}/>
+          <AddressCard title="Receiver" data={receiver} set={setReceiver} required errorFields={recErrors} contactFallback={{phone:sender.phone,email:sender.email}} addresses={settings.addresses} onSave={(d)=>{ if(!d.name&&!d.company)return; const entry={id:"ab"+Date.now(),name:d.name||"",company:d.company||"",address1:d.address1||"",address2:d.address2||"",city:d.city||"",state:d.state||"",zip:d.zip||"",country:d.country||"United States",phone:d.phone||"",email:d.email||"",acctCarrier:(billTo==="third"&&thirdAcct)?"FedEx":"",acctNum:(billTo==="third"&&thirdAcct)?thirdAcct:""}; setSettings(p=>{ const ex=(p.addresses||[]).filter(a=>!(a.address1===entry.address1&&a.zip===entry.zip)); return {...p,addresses:[entry,...ex]}; }); }} onPick={(a)=>{ if(a&&a.acctNum){setBillTo("third");setThirdAcct(a.acctNum);} else {setBillTo(settings.defaultBillTo||"sender");setThirdAcct("");} }}/>
         </div>
         {billTo==="third"&&thirdAcct&&<div className="flex flex-wrap items-center gap-2 text-xs -mt-1">
           <span className="flex items-center gap-1.5 text-[#006FBF] bg-[#E6F4FF] border border-[#99D6FF] rounded-lg px-3 py-1.5"><CreditCard className="w-3.5 h-3.5"/>Auto-billing to third-party account <b className="font-mono">{thirdAcct}</b><button onClick={()=>{setBillTo("sender");setThirdAcct("");}} className="ml-1 text-[#0086E0] hover:text-[#006FBF] underline">bill sender instead</button></span>
@@ -1168,15 +1221,14 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
               <span className="text-[11px] text-stone-400 font-mono">total {totalWeight} lb</span>
               <div className="flex items-center gap-1"><span className="text-[10px] uppercase tracking-widest text-stone-500">Insure $</span><input type="number" value={insurance} onChange={e=>setInsurance(e.target.value)} placeholder="0" className="w-16 bg-white border border-stone-300 rounded px-2 py-1 text-sm font-mono outline-none focus:border-[#0099FF] placeholder-stone-300"/></div>
               <div className="flex items-center gap-1.5"><span className="text-[10px] uppercase tracking-widest text-stone-500">Signature</span><select value={sigOption} onChange={e=>{setSigOption(e.target.value);setSig(e.target.value!=="none");}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-[#0099FF]"><option value="none">None</option><option value="direct">Direct signature</option><option value="indirect">Indirect signature</option><option value="adult">Adult signature</option></select></div>
-              {quotes.some(q=>{const l=String(q.label||"").toLowerCase();return l.includes("fedex")&&/(overnight|2\s?day|express saver)/.test(l);})&&<label className="flex items-center gap-1.5 text-[11px] text-stone-600 cursor-pointer"><input type="checkbox" checked={saturday} onChange={e=>setSat(e.target.checked)} className="accent-[#0086E0]"/><span className="uppercase tracking-widest text-stone-500">Saturday delivery</span></label>}
-              <label className="flex items-center gap-1.5 text-[11px] text-stone-600 cursor-pointer"><input type="checkbox" checked={oneRate} onChange={e=>setOneRate(e.target.checked)} className="accent-[#0086E0]"/><span className="uppercase tracking-widest text-stone-500">FedEx One Rate</span></label>
+              {quotes.some(q=>{const l=String(q.label||"").toLowerCase();return l.includes("fedex")&&/(overnight|2\s?day|express saver)/.test(l);})&&<label className="flex items-center gap-1.5 text-[11px] text-stone-600 cursor-pointer"><input type="checkbox" checked={saturday} onChange={e=>setSat(e.target.checked)} className="accent-[#0086E0]"/><span className="uppercase tracking-widest text-stone-500">Saturday delivery <span className="normal-case text-stone-400">(Express only)</span></span></label>}
             </div>
           </div>
-          {oneRate&&<div className={`text-[12px] rounded px-3 py-2 flex items-center gap-2 ${orBox?"bg-[#E6F4FF] text-[#0072BE] border border-[#99D6FF]":"bg-amber-50 text-amber-700 border border-amber-200"}`}><Boxes className="w-4 h-4 shrink-0"/>{orBox?<span>Qualifies for <b>{orBox.name}</b> — pricing this box only ({(+(pieces[0]&&pieces[0].L)||0)}×{(+(pieces[0]&&pieces[0].W)||0)}×{(+(pieces[0]&&pieces[0].H)||0)} in). Enter dims/weight to auto-select.</span>:<span>Enter length, width, height &amp; weight — the package must fit a One Rate box (≤2,200 cu in, ≤50 lb). Larger shipments aren't eligible for One Rate.</span>}</div>}
+          {orBox&&<div className="text-[12px] rounded px-3 py-2 flex items-center gap-2 bg-[#E6F4FF] text-[#0072BE] border border-[#99D6FF]"><Boxes className="w-4 h-4 shrink-0"/><span>Qualifies for FedEx One Rate — <b>{orBox.name.replace(/FedEx\s*One Rate®?\s*/i,"")}</b></span></div>}
           {pieces.map((p,i)=>(
             <div key={i} className="flex flex-wrap items-end gap-2 bg-white border border-stone-200 rounded px-2 py-2">
               <div className="text-[11px] text-stone-400 font-mono w-6">#{i+1}</div>
-              <div><div className="text-[10px] uppercase tracking-widest text-stone-500">Box</div><select onChange={e=>{const v=e.target.value; if(v.startsWith("or:")){setOneRate(true);} else {const pr=(settings.boxes||SEED_BOXES)[+v];if(pr)setPiece(i,{L:pr.L,W:pr.W,H:pr.H,weight:p.weight});}}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-[#0099FF]"><option value="-1">Custom</option>{(settings.boxes||SEED_BOXES).map((pr,j)=><option key={pr.id} value={j}>{pr.name}</option>)}<optgroup label="FedEx One Rate">{FEDEX_ONERATE.map(b=><option key={b.code} value={"or:"+b.code}>{b.name}</option>)}</optgroup></select></div>
+              <div><div className="text-[10px] uppercase tracking-widest text-stone-500">Box</div><select onChange={e=>{const pr=(settings.boxes||SEED_BOXES)[+e.target.value];if(pr)setPiece(i,{L:pr.L,W:pr.W,H:pr.H,weight:p.weight});}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-[#0099FF]"><option value="-1">Custom</option>{(settings.boxes||SEED_BOXES).map((pr,j)=><option key={pr.id} value={j}>{pr.name}</option>)}</select></div>
               <PkgInput label="L" req value={p.L} onChange={e=>setPiece(i,{L:e.target.value})}/>
               <PkgInput label="W" req value={p.W} onChange={e=>setPiece(i,{W:e.target.value})}/>
               <PkgInput label="H" req value={p.H} onChange={e=>setPiece(i,{H:e.target.value})}/>
@@ -1227,6 +1279,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
         </div>}
         <ServiceList quotes={quotes} best={best} bought={bought} action={ready?print:null} label="Print label" doneLabel="Printed" ready={ready}/>
         {labelPreview&&<LabelPreviewModal data={labelPreview} onClose={()=>setLabelPreview(null)}/>}
+        {naming&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={()=>setNaming(false)}><div className="bg-white rounded-xl shadow-xl p-5 w-full max-w-sm space-y-3" onClick={e=>e.stopPropagation()}><div className="text-sm font-semibold text-stone-800">Name this draft</div><input autoFocus value={draftName} onChange={e=>setDraftName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")commitDraft(draftName.trim());}} placeholder="e.g. Dana Cole – Miami" className="w-full bg-white border border-stone-300 rounded px-3 py-2 text-sm outline-none focus:border-[#0099FF]"/><div className="flex justify-end gap-2"><button onClick={()=>setNaming(false)} className="text-sm px-3 py-1.5 rounded text-stone-600 hover:bg-stone-100">Cancel</button><button onClick={()=>commitDraft(draftName.trim())} className="text-sm px-3 py-1.5 rounded bg-stone-900 text-white font-medium hover:bg-stone-800">Save draft</button></div></div></div>}
         {shipStatus&&<div className={`flex items-center gap-2 text-sm rounded-lg px-3 py-2.5 ${shipStatus.state==="error"?"bg-rose-50 text-rose-700 border border-rose-200":shipStatus.state==="booked"?"bg-emerald-50 text-emerald-700 border border-emerald-200":shipStatus.state==="pending_timeout"?"bg-amber-50 text-amber-700 border border-amber-200":"bg-[#E6F4FF] text-[#006FBF] border border-[#99D6FF]"}`}>
           {shipStatus.state==="booking"&&<><Loader2 className="w-4 h-4 animate-spin"/>Booking label on your England account…</>}
           {shipStatus.state==="pending"&&<><Loader2 className="w-4 h-4 animate-spin"/>Order pushed to England — waiting for it to book and return the label…</>}
@@ -1336,6 +1389,11 @@ function LabelPreviewModal({data,onClose}){
     </div>
   );
 }
+const FEDEX_LOGO="data:image/png;base64,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";
+function CarrierMark({carrier,className}){
+  if(carrier==="FedEx") return <img src={FEDEX_LOGO} alt="FedEx" className={className||"h-6 w-auto"}/>;
+  return <span className={`font-bold ${CARRIER_TINT[carrier]||"text-stone-700"} ${className||""}`}>{carrier}</span>;
+}
 function ServiceList({quotes,best,bought,action,label,doneLabel,showCost,ready=true}){
   const [view,setView]=useState("cheapest");
   const [open,setOpen]=useState(null);
@@ -1362,7 +1420,7 @@ function ServiceList({quotes,best,bought,action,label,doneLabel,showCost,ready=t
         <div onClick={()=>setOpen(isOpen?null:q.key)} className="px-3 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-stone-50 rounded-lg">
           <ChevronRight className={`w-4 h-4 text-stone-400 shrink-0 transition-transform ${isOpen?"rotate-90":""}`}/>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">{view==="cheapest"&&<span className={`text-[10px] font-bold w-10 shrink-0 ${CARRIER_TINT[q.carrier]}`}>{q.carrier}</span>}<span className="text-sm truncate">{q.label}</span>{q.key===best&&ready&&<span className="text-[10px] uppercase text-[#0086E0] border border-[#99D6FF] rounded px-1">best value</span>}</div>
+            <div className="flex items-center gap-2"><span className="text-sm truncate">{q.label}</span>{q.key===best&&ready&&<span className="text-[10px] uppercase text-[#0086E0] border border-[#99D6FF] rounded px-1">best value</span>}</div>
             <div className="text-[11px] text-stone-500 flex items-center gap-1"><Calendar className="w-3 h-3"/>Transit Time: {days?(<>{days} business day{days>1?"s":""}{eta?` · arrives ${fmtDeliv(eta)}`:""}</>):<span className="text-stone-300">—</span>}{fxLive&&days?<span className="text-[#0086E0] font-medium ml-1">FedEx</span>:""}</div>
           </div>
           {showCost&&<div className="text-right font-mono hidden sm:block"><div className="text-[10px] uppercase tracking-widest text-stone-400">cost</div><div className="text-sm text-stone-500">{ready&&q.cost!=null?money(q.cost):"—"}</div></div>}
@@ -1393,8 +1451,8 @@ function ServiceList({quotes,best,bought,action,label,doneLabel,showCost,ready=t
         </div>
       </div>
       {view==="cheapest"
-        ? <div className="space-y-1.5">{quotes.map(Row)}</div>
-        : CARRIER_ORDER.map(c=>{const list=quotes.filter(q=>q.carrier===c);if(!list.length)return null;return (<div key={c} className="mb-4"><div className={`text-xs font-bold tracking-wide mb-1.5 ${CARRIER_TINT[c]}`}>{c}</div><div className="space-y-1.5">{list.map(Row)}</div></div>);})}
+        ? CARRIER_ORDER.map(c=>{const list=quotes.filter(q=>q.carrier===c);if(!list.length)return null;return (<div key={c} className="mb-4"><div className="mb-2 pb-1.5 border-b border-stone-200"><CarrierMark carrier={c}/></div><div className="space-y-1.5">{list.map(Row)}</div></div>);})
+        : CARRIER_ORDER.map(c=>{const list=quotes.filter(q=>q.carrier===c);if(!list.length)return null;return (<div key={c} className="mb-4"><div className="mb-2 pb-1.5 border-b border-stone-200"><CarrierMark carrier={c}/></div><div className="space-y-1.5">{list.map(Row)}</div></div>);})}
     </div>
   );
 }
@@ -1454,6 +1512,7 @@ function Orders({orders,setOrders,goShip,client,settings,onShipped}){
               <div className="font-mono text-sm w-16 text-right">${o.total}</div>
               <Badge tone={o.status==="fulfilled"?"green":"amber"}>{o.status}</Badge>
               <button onClick={(e)=>{e.stopPropagation();setOpen(open===o.id?null:o.id);}} disabled={o.status==="fulfilled"} className="text-sm bg-stone-900 text-white rounded px-3 py-1.5 font-medium hover:bg-stone-800 disabled:opacity-40">{o.status==="fulfilled"?"Shipped":"Ship"}</button>
+              <button onClick={(e)=>{e.stopPropagation();if(window.confirm(`Delete order ${o.name}? This removes it from ShippingCloud completely.`))setOrders(os=>os.filter(x=>x.id!==o.id));}} title="Delete order" className="text-stone-300 hover:text-rose-500 shrink-0"><Trash2 className="w-4 h-4"/></button>
             </div>
             {open===o.id&&<OrderDetail o={o} setOrders={setOrders} client={client} settings={settings} onShipped={onShipped} goShip={ship}/>}
           </div>
@@ -1696,13 +1755,25 @@ function Pickups({pickups,setPickups,settings}){
 
 /* ════════ QUICK QUOTE ════════ */
 function QuickQuote({onClose,client,england}){
-  const [s,setS]=useState({fromZip:client?.origin||"84003",toZip:"90210",weight:3,L:12,W:9,H:4,residential:true});
-  const ready=/^\d{5}/.test(s.toZip||"")&&/^\d{5}/.test(s.fromZip||"")&&s.weight>0;
+  const [fromZip,setFromZip]=useState(client?.origin||"84003");
+  const [toZip,setToZip]=useState("90210");
+  const [residential,setResidential]=useState(true);
+  const [pieces,setPieces]=useState([{weight:3,L:12,W:9,H:4,oz:""}]);
+  const [sigOption,setSigOption]=useState("none");
+  const [saturday,setSaturday]=useState(false);
+  const [insurance,setInsurance]=useState("");
+  const pw=(p)=>Math.round(((+p.weight||0)+(+p.oz||0)/16)*1000)/1000;
+  const setPiece=(i,patch)=>setPieces(ps=>ps.map((p,j)=>j===i?{...p,...patch}:p));
+  const addPiece=()=>setPieces(ps=>[...ps,{weight:"",L:"",W:"",H:"",oz:""}]);
+  const delPiece=(i)=>setPieces(ps=>ps.filter((_,j)=>j!==i));
+  const totalWeight=Math.round(pieces.reduce((a,p)=>a+pw(p),0)*100)/100;
+  const ready=/^\d{5}/.test(toZip||"")&&/^\d{5}/.test(fromZip||"")&&pieces.every(p=>pw(p)>0&&+p.L>0&&+p.W>0&&+p.H>0);
   const [rateSrc,setRateSrc]=useState({rates:[],live:false,loading:false,error:null});
+  const shipPieces=pieces.map(p=>({weight:pw(p),L:+p.L||12,W:+p.W||9,H:+p.H||4}));
   useEffect(()=>{
     let cancel=false;
     if(!ready){setRateSrc({rates:[],live:false,loading:false,error:null});return;}
-    const ship={fromZip:s.fromZip,toZip:s.toZip,pieces:[{weight:s.weight,L:s.L,W:s.W,H:s.H}],residential:s.residential};
+    const ship={fromZip,toZip,pieces:shipPieces,residential,signature:sigOption!=="none",signatureOption:sigOption,saturdayDelivery:saturday,insuranceAmount:insurance||null};
     if(england&&england.enabled&&england.apiKey&&england.customerId){
       setRateSrc(p=>({...p,loading:true}));
       getLiveRates(ship,england).then(res=>{ if(cancel)return;
@@ -1711,8 +1782,9 @@ function QuickQuote({onClose,client,england}){
       });
     } else setRateSrc({rates:quoteRates(ship),live:false,loading:false,error:null});
     return ()=>{cancel=true;};
-  },[s,england]);
-  const quotes=useMemo(()=>rateSrc.rates.map(q=>({...q,sell:Math.round(q.cost*(1+(client?.markup||0)/100)*100)/100})).sort((a,b)=>a.sell-b.sell),[rateSrc,client]);
+  },[fromZip,toZip,residential,JSON.stringify(pieces),sigOption,saturday,insurance,england]);
+  const quotes=useMemo(()=>rateSrc.rates.filter(q=>q.carrier==="FedEx").map(q=>({...q,sell:Math.round(q.cost*(1+(client?.markup||0)/100)*100)/100})).sort((a,b)=>a.sell-b.sell),[rateSrc,client]);
+  const hasExpress=quotes.some(q=>{const l=String(q.label||"").toLowerCase();return /(overnight|2\s?day|express saver)/.test(l);});
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:p-8 bg-stone-900/40 backdrop-blur-sm overflow-auto" onClick={onClose}>
       <div className="bg-stone-50 rounded-xl border border-stone-200 shadow-xl w-full max-w-3xl" onClick={e=>e.stopPropagation()}>
@@ -1721,12 +1793,28 @@ function QuickQuote({onClose,client,england}){
           <button onClick={onClose} className="text-stone-400 hover:text-stone-700"><X className="w-5 h-5"/></button>
         </div>
         <div className="p-5 flex flex-col lg:flex-row gap-5">
-          <div className="lg:w-64 shrink-0"><Panel title="Shipment">
-            <div className="grid grid-cols-2 gap-3"><Field label="From ZIP"><Input value={s.fromZip} onChange={e=>setS({...s,fromZip:e.target.value})}/></Field><Field label="To ZIP"><Input value={s.toZip} onChange={e=>setS({...s,toZip:e.target.value})}/></Field></div>
-            <Field label="Weight (lb)"><Input type="number" value={s.weight} onChange={e=>setS({...s,weight:+e.target.value})}/></Field>
-            <Field label="Dimensions (in)"><div className="grid grid-cols-3 gap-2">{["L","W","H"].map(k=><Input key={k} type="number" value={s[k]} onChange={e=>setS({...s,[k]:+e.target.value})}/>)}</div></Field>
-            <Toggle on={s.residential} set={v=>setS({...s,residential:v})} label="Residential"/>
-            <div className="grid grid-cols-2 gap-px bg-stone-200 border border-stone-200 rounded overflow-hidden font-mono text-center"><div className="bg-white py-2"><div className="text-[10px] uppercase text-stone-400">zone</div><div className="font-semibold">{zoneEst(s.fromZip,s.toZip)}</div></div><div className="bg-white py-2"><div className="text-[10px] uppercase text-stone-400">billable</div><div className="font-semibold">{billable(s.L,s.W,s.H,s.weight)} lb</div></div></div>
+          <div className="lg:w-72 shrink-0"><Panel title="Shipment">
+            <div className="grid grid-cols-2 gap-3"><Field label="From ZIP"><Input value={fromZip} onChange={e=>setFromZip(e.target.value)}/></Field><Field label="To ZIP"><Input value={toZip} onChange={e=>setToZip(e.target.value)}/></Field></div>
+            <Toggle on={residential} set={setResidential} label="Residential"/>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between"><span className="text-[10px] uppercase tracking-widest text-stone-400">Packages · {pieces.length}</span><span className="text-[11px] text-stone-400 font-mono">total {totalWeight} lb</span></div>
+              {pieces.map((p,i)=>(
+                <div key={i} className="flex flex-wrap items-end gap-1.5 bg-white border border-stone-200 rounded px-2 py-2">
+                  <div className="text-[11px] text-stone-400 font-mono w-4">#{i+1}</div>
+                  <PkgInput label="L" req value={p.L} onChange={e=>setPiece(i,{L:e.target.value})}/>
+                  <PkgInput label="W" req value={p.W} onChange={e=>setPiece(i,{W:e.target.value})}/>
+                  <PkgInput label="H" req value={p.H} onChange={e=>setPiece(i,{H:e.target.value})}/>
+                  <PkgInput label="lb" req value={p.weight} onChange={e=>setPiece(i,{weight:e.target.value})}/>
+                  <PkgInput label="oz" value={p.oz} onChange={e=>setPiece(i,{oz:e.target.value})}/>
+                  {pieces.length>1&&<button onClick={()=>delPiece(i)} className="text-stone-300 hover:text-rose-500 mb-1"><Trash2 className="w-3.5 h-3.5"/></button>}
+                </div>
+              ))}
+              <button onClick={addPiece} className="flex items-center gap-1 text-xs bg-stone-200 hover:bg-stone-300 rounded px-2.5 py-1.5 font-medium text-stone-700"><Plus className="w-3.5 h-3.5"/>Add package</button>
+            </div>
+            <Field label="Signature"><Select value={sigOption} onChange={e=>setSigOption(e.target.value)}><option value="none">None</option><option value="direct">Direct signature</option><option value="indirect">Indirect signature</option><option value="adult">Adult signature</option></Select></Field>
+            <Field label="Insurance $"><Input type="number" value={insurance} onChange={e=>setInsurance(e.target.value)} placeholder="0"/></Field>
+            {hasExpress&&<label className="flex items-center gap-1.5 text-sm text-stone-600 cursor-pointer"><input type="checkbox" checked={saturday} onChange={e=>setSaturday(e.target.checked)} className="accent-[#0086E0]"/>Saturday delivery <span className="text-stone-400 text-xs">(Express only)</span></label>}
+            <div className="grid grid-cols-2 gap-px bg-stone-200 border border-stone-200 rounded overflow-hidden font-mono text-center"><div className="bg-white py-2"><div className="text-[10px] uppercase text-stone-400">zone</div><div className="font-semibold">{zoneEst(fromZip,toZip)}</div></div><div className="bg-white py-2"><div className="text-[10px] uppercase text-stone-400">billable</div><div className="font-semibold">{billable(pieces[0].L,pieces[0].W,pieces[0].H,totalWeight)} lb</div></div></div>
             {ready&&<div className={`text-[11px] rounded px-2 py-1.5 flex items-center gap-1.5 ${rateSrc.loading?"bg-stone-100 text-stone-500":rateSrc.live?"bg-emerald-50 text-emerald-700":"bg-[#E6F4FF] text-[#006FBF]"}`}>{rateSrc.loading?<><Loader2 className="w-3 h-3 animate-spin"/>Fetching…</>:rateSrc.live?<><Wifi className="w-3 h-3"/>Live rates</>:<><Calculator className="w-3 h-3"/>Estimated</>}</div>}
           </Panel></div>
           <div className="flex-1 min-w-0"><ServiceList quotes={quotes} ready={ready}/></div>
