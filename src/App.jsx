@@ -9,7 +9,7 @@ const FW_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfIAAAAsCAYAAACe0jo
 
 
 const DEFAULT_BRAND={name1:"Shipping",name2:"Cloud",primary:FW_BLUE,dark:FW_DARK,partnerLabel:"by",logo:FW_LOGO,showLogo:true};
-const BUILD_TAG="addr-v44";
+const BUILD_TAG="addr-v45";
 
 /* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
@@ -808,6 +808,28 @@ export default function App(){
   };
   // record an order that pushed to England but hasn't booked yet, so we can pull its label later
   const onPending=(entry)=>{ if(!entry||!entry.orderId)return; setPendingShips(p=>[{...entry,at:Date.now()},...p.filter(x=>x.orderId!==entry.orderId)]); };
+  // shared Shopify order sync (used by manual refresh buttons + auto-refresh)
+  const [syncingOrders,setSyncingOrders]=useState(false);
+  const syncOrders=async()=>{
+    if(!shopifyConnected(settings))return {ok:false,error:"Shopify not connected"};
+    setSyncingOrders(true);
+    const res=await shopifySyncOrders(settings.shopifyConn);
+    setSyncingOrders(false);
+    if(res&&res.ok){
+      let added=0;
+      setOrders(p=>{const have=new Set(p.map(o=>o.shopifyId).filter(Boolean));const fresh=(res.orders||[]).filter(o=>!have.has(o.shopifyId));added=fresh.length;return fresh.length?[...fresh,...p]:p;});
+      return {ok:true,added};
+    }
+    return {ok:false,error:(res&&res.error)||"Sync failed"};
+  };
+  // auto-refresh Shopify orders every 2 minutes while connected
+  useEffect(()=>{
+    if(!shopifyConnected(settings))return;
+    const id=setInterval(()=>{syncOrders();},120000);
+    return ()=>clearInterval(id);
+  },[settings.shopifyConn&&settings.shopifyConn.shop,settings.shopifyConn&&settings.shopifyConn.token]);
+  // blank the receiver on a fresh page load / login (stays filled across tab switches within a session)
+  useEffect(()=>{ try{ localStorage.removeItem("ship.receiver"); }catch(e){} },[]);
   // re-check England for any staged orders that have since booked; pull label + tracking into Shipments
   const checkPendingLabels=async()=>{
     const eng=settings.england;
@@ -879,7 +901,7 @@ export default function App(){
         </aside>
         <main className="flex-1 min-w-0 px-3 sm:px-6 py-4 sm:py-6">
           {tab==="dashboard"&&<Dashboard shipments={shipments} orders={orders} returns={returns} goTab={setTab}/>}
-          {tab==="ship"&&<Ship client={client} accounts={accounts} orders={orders} settings={settings} setSettings={setSettings} rules={rules} drafts={drafts} setDrafts={setDrafts} prefill={prefill} clearPrefill={()=>setPrefill(null)} onShipped={onShipped} onPending={onPending} logEmail={logEmail} onQuickQuote={()=>setQQ(true)}/>}
+          {tab==="ship"&&<Ship client={client} accounts={accounts} orders={orders} settings={settings} setSettings={setSettings} rules={rules} drafts={drafts} setDrafts={setDrafts} prefill={prefill} clearPrefill={()=>setPrefill(null)} onShipped={onShipped} onPending={onPending} logEmail={logEmail} onQuickQuote={()=>setQQ(true)} onRefresh={syncOrders} syncing={syncingOrders}/>}
           {tab==="scan"&&<Scan orders={orders} goShip={goShip} goTab={setTab}/>}
           {tab==="orders"&&<Orders orders={orders} setOrders={setOrders} goShip={goShip} client={client} settings={settings} onShipped={onShipped}/>}
           {tab==="batch"&&<Batch orders={orders} setOrders={setOrders} client={client} rules={rules} settings={settings} onShipped={onShipped}/>}
@@ -899,7 +921,7 @@ export default function App(){
 }
 
 /* ════════ SHIP ════════ */
-function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDrafts,prefill,clearPrefill,onShipped,onPending,logEmail,onQuickQuote}){
+function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDrafts,prefill,clearPrefill,onShipped,onPending,logEmail,onQuickQuote,onRefresh,syncing}){
   const empty={country:"United States",name:"",company:"",zip:"",state:"",city:"",address1:"",address2:"",address3:"",phone:"",email:""};
   const [sender,setSender]=useState({country:"United States",...settings.sender,address2:"",address3:""});
   const [receiver,setReceiver]=usePersist("ship.receiver",empty);
@@ -1025,7 +1047,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
     if(!ready||!orBox||!(eng&&eng.enabled&&eng.apiKey&&eng.customerId))return;
     getLiveRates({...shipment,packageTypeCode:orBox.code},eng).then(res=>{ if(cancel)return;
       if(res&&res.live&&res.rates&&res.rates.length){
-        setOrRates(res.rates.filter(q=>q.carrier==="FedEx").map(q=>({...q,key:"or_"+q.key,label:q.label.replace(/®?$/,"")+" · One Rate",_oneRate:true,packageTypeCode:orBox.code})));
+        setOrRates(res.rates.filter(q=>q.carrier==="FedEx"&&/2\s?day/i.test(q.label||"")&&!/a\.?m\.?/i.test(q.label||"")).map(q=>({...q,key:"or_"+q.key,label:q.label.replace(/®?$/,"")+" · One Rate",_oneRate:true,packageTypeCode:orBox.code})));
       }
     });
     return ()=>{cancel=true;};
@@ -1137,12 +1159,15 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
       <aside className="w-60 shrink-0 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <button onClick={()=>setOrdersOpen(false)} className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-stone-500 hover:text-stone-700"><ChevronDown className="w-4 h-4"/><ShoppingBag className="w-4 h-4"/>Orders{ordersToShow.length?<span className="text-stone-400 normal-case font-normal">· {ordersToShow.length}</span>:""}</button>
-          <select value={orderSort} onChange={e=>setOrderSort(e.target.value)} className="bg-white border border-stone-200 rounded px-1.5 py-1 text-[11px] outline-none focus:border-[#0099FF]"><option value="date">Newest</option><option value="total">Total</option><option value="customer">Name</option><option value="state">State</option><option value="weight">Weight</option></select>
+          <div className="flex items-center gap-1">
+            {onRefresh&&shopifyConnected(settings)&&<button onClick={onRefresh} disabled={syncing} title="Refresh orders" className="text-stone-400 hover:text-[#0086E0] disabled:opacity-40 p-1">{syncing?<Loader2 className="w-3.5 h-3.5 animate-spin"/>:<RotateCcw className="w-3.5 h-3.5"/>}</button>}
+            <select value={orderSort} onChange={e=>setOrderSort(e.target.value)} className="bg-white border border-stone-200 rounded px-1.5 py-1 text-[11px] outline-none focus:border-[#0099FF]"><option value="date">Newest</option><option value="total">Total</option><option value="customer">Name</option><option value="state">State</option><option value="weight">Weight</option></select>
+          </div>
         </div>
         <div className="relative"><Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400"/><input value={orderQ} onChange={e=>setOrderQ(e.target.value)} placeholder="Search orders" className="w-full bg-white border border-stone-200 rounded-lg pl-8 pr-2 py-1.5 text-sm outline-none focus:border-[#0099FF]"/></div>
         <div className="flex items-center gap-1.5">
           <select value={storeFilter} onChange={e=>setStoreFilter(e.target.value)} className="flex-1 bg-white border border-stone-200 rounded px-1.5 py-1 text-[11px] outline-none focus:border-[#0099FF]"><option value="all">All stores</option>{storesPresent.map(s=><option key={s} value={s}>{s}</option>)}</select>
-          <button onClick={()=>{const t=new Date().toISOString().slice(0,10);setDateFrom(t);setDateTo(t);}} className="text-[11px] font-medium bg-[#E6F4FF] text-[#006FBF] border border-[#99D6FF] rounded px-2 py-1 hover:bg-[#D6ECFF] shrink-0">Today</button>
+          <button onClick={()=>{const t=new Date().toISOString().slice(0,10);if(dateFrom===t&&dateTo===t){setDateFrom("");setDateTo("");}else{setDateFrom(t);setDateTo(t);}}} className={`text-[11px] font-medium rounded px-2 py-1 border shrink-0 ${(()=>{const t=new Date().toISOString().slice(0,10);return dateFrom===t&&dateTo===t;})()?"bg-[#0099FF] text-white border-[#0099FF]":"bg-[#E6F4FF] text-[#006FBF] border-[#99D6FF] hover:bg-[#D6ECFF]"}`}>Today</button>
         </div>
         <div className="flex items-center gap-1 text-[10px] text-stone-400">
           <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className="flex-1 bg-white border border-stone-200 rounded px-1.5 py-1 text-[11px] text-stone-600 outline-none focus:border-[#0099FF]"/>
@@ -1181,7 +1206,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
         </div>
         <div className="relative grid lg:grid-cols-2 gap-4">
           <AddressCard title="Sender" data={sender} set={setSender} addresses={settings.addresses} onSave={(d)=>{ if(!d.name&&!d.company)return; const entry={id:"ab"+Date.now(),name:d.name||"",company:d.company||"",address1:d.address1||"",address2:d.address2||"",city:d.city||"",state:d.state||"",zip:d.zip||"",country:d.country||"United States",phone:d.phone||"",email:d.email||"",acctCarrier:(billTo==="third"&&thirdAcct)?"FedEx":"",acctNum:(billTo==="third"&&thirdAcct)?thirdAcct:""}; setSettings(p=>{ const ex=(p.addresses||[]).filter(a=>!(a.address1===entry.address1&&a.zip===entry.zip)); return {...p,addresses:[entry,...ex]}; }); }}/>
-          <button onClick={swap} title="Swap" className="hidden lg:flex absolute left-1/2 top-6 -translate-x-1/2 z-10 w-9 h-9 items-center justify-center rounded-full bg-stone-200 border border-stone-300 hover:bg-stone-300 text-stone-700"><ArrowLeftRight className="w-4 h-4"/></button>
+          <button onClick={swap} title="Swap sender & receiver" className="hidden lg:flex absolute left-1/2 top-1 -translate-x-1/2 z-10 w-6 h-6 items-center justify-center rounded-full bg-white border border-stone-300 hover:bg-stone-100 text-stone-600 shadow-sm"><ArrowLeftRight className="w-3 h-3"/></button>
           <AddressCard title="Receiver" data={receiver} set={setReceiver} required errorFields={recErrors} contactFallback={{phone:sender.phone,email:sender.email}} addresses={settings.addresses} onSave={(d)=>{ if(!d.name&&!d.company)return; const entry={id:"ab"+Date.now(),name:d.name||"",company:d.company||"",address1:d.address1||"",address2:d.address2||"",city:d.city||"",state:d.state||"",zip:d.zip||"",country:d.country||"United States",phone:d.phone||"",email:d.email||"",acctCarrier:(billTo==="third"&&thirdAcct)?"FedEx":"",acctNum:(billTo==="third"&&thirdAcct)?thirdAcct:""}; setSettings(p=>{ const ex=(p.addresses||[]).filter(a=>!(a.address1===entry.address1&&a.zip===entry.zip)); return {...p,addresses:[entry,...ex]}; }); }} onPick={(a)=>{ if(a&&a.acctNum){setBillTo("third");setThirdAcct(a.acctNum);} else {setBillTo(settings.defaultBillTo||"sender");setThirdAcct("");} }}/>
         </div>
         {billTo==="third"&&thirdAcct&&<div className="flex flex-wrap items-center gap-2 text-xs -mt-1">
@@ -3052,7 +3077,7 @@ function AddressCard({title,data,set,required,residential,setResidential,address
     <div className="flex items-center justify-between mb-1.5">
       <span className="text-[#0086E0] font-semibold text-sm">{title}</span>
       <div className="flex items-center gap-2">
-        {onSave&&<button type="button" onClick={saveToBook} disabled={!data.name&&!data.company} className={`flex items-center gap-1 text-[11px] rounded px-2 py-1 border ${savedOk?"bg-emerald-50 border-emerald-200 text-emerald-700":"bg-white border-stone-200 text-stone-500 hover:text-[#0086E0] hover:border-[#99D6FF] disabled:opacity-40"}`} title="Save this address to your address book">{savedOk?<><Check className="w-3.5 h-3.5"/>Saved</>:<><Plus className="w-3.5 h-3.5"/>Save to Address Book</>}</button>}
+        {onSave&&<button type="button" onClick={saveToBook} disabled={!data.name&&!data.company} className={`flex items-center gap-1 text-[10px] rounded px-1.5 py-0.5 border ${savedOk?"bg-emerald-50 border-emerald-200 text-emerald-700":"bg-white border-stone-200 text-stone-500 hover:text-[#0086E0] hover:border-[#99D6FF] disabled:opacity-40"}`} title="Save this address to your address book">{savedOk?<><Check className="w-3 h-3"/>Saved</>:<><Plus className="w-3 h-3"/>Save to Address Book</>}</button>}
         {setResidential&&<label className="flex items-center gap-1.5 text-[11px] cursor-pointer"><input type="checkbox" checked={residential} onChange={e=>setResidential(e.target.checked)} className="accent-[#0086E0]"/>{residential?<span className="flex items-center gap-1 text-[#006FBF]"><Home className="w-3.5 h-3.5"/>Residential</span>:<span className="flex items-center gap-1 text-stone-600"><Building2 className="w-3.5 h-3.5"/>Commercial</span>}</label>}
       </div>
     </div>
