@@ -9,7 +9,7 @@ const FW_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfIAAAAsCAYAAACe0jo
 
 
 const DEFAULT_BRAND={name1:"Shipping",name2:"Cloud",primary:FW_BLUE,dark:FW_DARK,partnerLabel:"by",logo:FW_LOGO,showLogo:true};
-const BUILD_TAG="addr-v33";
+const BUILD_TAG="addr-v34";
 
 /* ════════ RATE ENGINE (demo) ════════ */
 const DIM=139;
@@ -35,12 +35,6 @@ const RATES={
   fedex_ground:{carrier:"FedEx",base:9.2,pz:.95,pl:.55,fuel:.16,res:4.2,days:[1,5],label:"FedEx Ground®"},
   fedex_home:{carrier:"FedEx",base:8.2,pz:.9,pl:.52,fuel:.16,res:0,days:[1,5],label:"FedEx Home Delivery®"},
   fedex_econ:{carrier:"FedEx",base:7.1,pz:.7,pl:.4,fuel:.12,res:0,days:[2,7],label:"FedEx Ground Economy"},
-  ups_nda:{carrier:"UPS",base:40,pz:4.4,pl:2.7,fuel:.16,res:5.3,days:[1,1],label:"UPS Next Day Air®"},
-  ups_2day:{carrier:"UPS",base:19,pz:2.3,pl:1.35,fuel:.16,res:5.3,days:[2,2],label:"UPS 2nd Day Air®"},
-  ups_3day:{carrier:"UPS",base:15,pz:1.7,pl:1.0,fuel:.16,res:5.3,days:[3,3],label:"UPS 3 Day Select®"},
-  ups_ground:{carrier:"UPS",base:8.5,pz:.95,pl:.55,fuel:.16,res:5.3,days:[1,5],label:"UPS® Ground"},
-  usps_priority:{carrier:"USPS",base:9.6,pz:1.1,pl:.7,fuel:0,res:0,days:[1,3],label:"USPS Priority Mail®"},
-  usps_ga:{carrier:"USPS",base:7.8,pz:.65,pl:.45,fuel:0,res:0,days:[2,5],label:"USPS Ground Advantage®"},
   fedex_intl_first:{carrier:"FedEx",intl:true,base:96,pl:9.5,fuel:.17,days:[1,3],label:"FedEx International First®"},
   fedex_intl_prio:{carrier:"FedEx",intl:true,base:78,pl:7.5,fuel:.17,days:[1,3],label:"FedEx International Priority®"},
   fedex_intl_econ:{carrier:"FedEx",intl:true,base:58,pl:5.5,fuel:.17,days:[2,5],label:"FedEx International Economy®"},
@@ -80,7 +74,7 @@ const newTracking=carrier=>carrier==="UPS"?"1Z"+Math.random().toString(36).slice
 const RATES_ENDPOINT="/.netlify/functions/quote";
 async function getLiveRates(s,england){
   if(!england||!england.enabled) return null;
-  const body={carriers:s.carriers||"fedex",fromZip:s.fromZip,toZip:s.toZip,fromCountry:s.fromCountry||"US",toCountry:s.toCountry||"US",residential:!!s.residential,signature:!!s.signature,signatureOption:s.signatureOption||(s.signature?"direct":"none"),pieces:(s.pieces||[]).map(p=>({weight:+p.weight||1,length:+p.L||12,width:+p.W||9,height:+p.H||4})),account:{base:england.base,apiKey:england.apiKey,customerId:england.customerId}};
+  const body={carriers:s.carriers||"fedex",fromZip:s.fromZip,toZip:s.toZip,fromCountry:s.fromCountry||"US",toCountry:s.toCountry||"US",residential:!!s.residential,signature:!!s.signature,signatureOption:s.signatureOption||(s.signature?"direct":"none"),packageTypeCode:s.packageTypeCode||"",pieces:(s.pieces||[]).map(p=>({weight:+p.weight||1,length:+p.L||12,width:+p.W||9,height:+p.H||4})),account:{base:england.base,apiKey:england.apiKey,customerId:england.customerId}};
   try{
     const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),12000);
     const r=await fetch(RATES_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:ctrl.signal});
@@ -273,35 +267,17 @@ async function fedexSchedulePickup(p){
 
 /* ════════ SEED ════════ */
 const SEED_CLIENTS=[
-  {id:"c1",name:"Sparkle in Pink",markup:18,origin:"84003",contact:"Spencer Anderson",email:"ops@sparkleinpink.com",phone:"801-555-0100",status:"active",since:"2025-09",plan:"Volume"},
-  {id:"c2",name:"House accounts",markup:12,origin:"84057",contact:"—",email:"",phone:"",status:"active",since:"2025-06",plan:"Standard"},
+    {id:"c2",name:"House accounts",markup:12,origin:"84057",contact:"—",email:"",phone:"",status:"active",since:"2025-06",plan:"Standard"},
 ];
 const SEED_USERS=[
   {id:"u1",name:"Spencer Anderson",email:"spencer@shippingcloud.net",role:"admin",clientId:null,status:"active",password:"admin",lastLogin:"Today"},
-  {id:"u2",name:"Sparkle in Pink",email:"ops@sparkleinpink.com",role:"customer",clientId:"c1",status:"active",password:"sip123",lastLogin:"2d ago"},
-];
+  ];
 const SEED_ACCOUNTS=[{id:"a1",label:"England Logistics",provider:"england",account:"20601652",status:"connected",mode:"demo"}];
-const SEED_ORDERS=[
-  {id:1042,name:"#1042",customer:"Jenna Reyes",company:"",zip:"90210",city:"Beverly Hills",state:"CA",address1:"412 Canon Dr",phone:"310-555-0142",email:"jenna@example.com",total:"48.00",weight:2,items:"2× Ruffle Leggings",sku:"SIP-LEG-RUF",product:"Ruffle Leggings",source:"Shopify",shippingService:"Standard",status:"unfulfilled",date:"6/24"},
-  {id:1043,name:"#1043",customer:"Marcus Lee",company:"",zip:"10001",city:"New York",state:"NY",address1:"88 W 28th St",phone:"212-555-0119",email:"marcus@example.com",total:"112.50",weight:5,items:"1× Tutu Set, 3× Hair Bows",sku:"SIP-TUTU-SET",product:"Tutu Set",source:"Shopify",shippingService:"Express",status:"unfulfilled",date:"6/24"},
-  {id:1044,name:"#1044",customer:"Priya Shah",company:"",zip:"60614",city:"Chicago",state:"IL",address1:"2210 N Halsted St",phone:"312-555-0173",email:"priya@example.com",total:"29.99",weight:1,items:"1× Onesie",sku:"SIP-ONESIE",product:"Onesie",source:"Amazon",shippingService:"Standard",status:"unfulfilled",date:"6/25"},
-  {id:1045,name:"#1045",customer:"Dana Cole",company:"",zip:"33101",city:"Miami",state:"FL",address1:"701 Brickell Ave",phone:"305-555-0188",email:"dana@example.com",total:"76.20",weight:3,items:"1× Swim Set, 2× Sandals",sku:"SIP-SWIM-SET",product:"Swim Set",source:"Shopify",shippingService:"Standard",status:"unfulfilled",date:"6/25"},
-];
+const SEED_ORDERS=[];
 const SCAN_CITIES=["Memphis, TN hub","Indianapolis, IN hub","Ontario, CA","Newark, NJ","Atlanta, GA hub","Local facility","Out for delivery"];
-const seedShip=(dayAgo,carrier,service,name,city,state,zip,cost,weight,status,lastScan,onTime=true)=>({id:Math.floor(Math.random()*1e9),date:new Date(Date.now()-dayAgo*864e5).toLocaleDateString(),dayAgo,tracking:newTracking(carrier),carrier,service,recipient:{name,city,state,zip},sender:{},fromZip:"84003",toZip:zip,weight,dims:{L:12,W:9,H:4},pieces:[{weight,L:12,W:9,H:4}],cost,sell:Math.round(cost*1.18*100)/100,billTo:"sender",thirdAcct:"",status:status||(dayAgo>3?"Delivered":dayAgo>0?"In transit":"Label created"),lastScan:lastScan||"Origin scan",eta:new Date(Date.now()+Math.max(0,3-dayAgo)*864e5).toLocaleDateString(),onTime,reference:"",client:"Sparkle in Pink",intl:false});
-const SEED_SHIPMENTS=[
-  seedShip(0,"FedEx","FedEx Ground®","Avery Kim","Austin","TX","73301",9.4,3,"Label created","Label created"),
-  seedShip(0,"UPS","UPS® Ground","Liam Ford","Reno","NV","89501",8.9,2,"In transit","Salt Lake City, UT"),
-  seedShip(1,"FedEx","FedEx Home Delivery®","Mia Chen","Portland","OR","97201",10.2,4,"Out for delivery","Out for delivery — Portland, OR"),
-  seedShip(1,"USPS","USPS Ground Advantage®","Noah Diaz","Tampa","FL","33601",7.6,1,"In transit","Atlanta, GA hub"),
-  seedShip(2,"FedEx","FedEx 2Day®","Ella Brooks","Denver","CO","80201",19.3,3,"Exception","Delivery exception — address issue",false),
-  seedShip(2,"DHL","DHL Express Worldwide","Sofia Rossi","Toronto","ON","M5V",41.0,3,"In transit","Cincinnati, OH gateway"),
-  seedShip(3,"UPS","UPS® Ground","Owen Gray","Boise","ID","83701",8.1,2,"Delivered","Delivered — front porch"),
-  seedShip(4,"FedEx","FedEx Ground®","Zoe Park","Mesa","AZ","85201",9.0,3,"Delivered","Delivered — received"),
-  seedShip(5,"USPS","USPS Priority Mail®","Kai Reed","Salt Lake City","UT","84101",9.8,2,"Delivered","Delivered — mailbox",false),
-  seedShip(6,"FedEx","FedEx Ground Economy","Ivy Lane","Fresno","CA","93650",7.2,1,"Delivered","Delivered — received"),
-];
-const SEED_RETURNS=[{id:9001,rma:"RMA-4471",customer:"Jenna Reyes",order:"#1039",reason:"Wrong size",carrier:"FedEx",tracking:newTracking("FedEx"),status:"In transit",date:new Date(Date.now()-864e5).toLocaleDateString()}];
+const seedShip=(dayAgo,carrier,service,name,city,state,zip,cost,weight,status,lastScan,onTime=true)=>({id:Math.floor(Math.random()*1e9),date:new Date(Date.now()-dayAgo*864e5).toLocaleDateString(),dayAgo,tracking:newTracking(carrier),carrier,service,recipient:{name,city,state,zip},sender:{},fromZip:"84003",toZip:zip,weight,dims:{L:12,W:9,H:4},pieces:[{weight,L:12,W:9,H:4}],cost,sell:Math.round(cost*1.18*100)/100,billTo:"sender",thirdAcct:"",status:status||(dayAgo>3?"Delivered":dayAgo>0?"In transit":"Label created"),lastScan:lastScan||"Origin scan",eta:new Date(Date.now()+Math.max(0,3-dayAgo)*864e5).toLocaleDateString(),onTime,reference:"",client:"",intl:false});
+const SEED_SHIPMENTS=[];
+const SEED_RETURNS=[];
 const SEED_RULES=[
   {id:"r1",name:"Heavy → Ground",enabled:true,field:"weight",op:">",value:"10",action:"service",actionValue:"Cheapest Ground"},
   {id:"r2",name:"High-value → Signature",enabled:true,field:"value",op:">",value:"150",action:"signature",actionValue:"Require signature"},
@@ -328,6 +304,25 @@ function pickBox(items,boxes,slack=1.30){
   const count=Math.max(1,Math.ceil(Math.max(need/boxVol(big),totalWt/big.maxWt)));
   return {box:big,count,itemWt:totalWt,billWt:Math.round((totalWt+big.empty*count)*10)/10,reason:`split into ${count} boxes`};
 }
+/* FedEx One Rate packaging (flat-rate by box size; volume in cubic inches, weight in lb) */
+const FEDEX_ONERATE=[
+  {code:"fedex_envelope",name:"FedEx One Rate® Envelope",maxVol:300,maxLbs:10,kind:"flat"},
+  {code:"fedex_pak",name:"FedEx One Rate® Pak",maxVol:650,maxLbs:50,kind:"flat"},
+  {code:"fedex_extra_small_box",name:"FedEx One Rate® Extra Small Box",maxVol:168,maxLbs:50,kind:"box"},
+  {code:"fedex_small_box",name:"FedEx One Rate® Small Box",maxVol:420,maxLbs:50,kind:"box"},
+  {code:"fedex_medium_box",name:"FedEx One Rate® Medium Box",maxVol:650,maxLbs:50,kind:"box"},
+  {code:"fedex_large_box",name:"FedEx One Rate® Large Box",maxVol:1100,maxLbs:50,kind:"box"},
+  {code:"fedex_extra_large_box",name:"FedEx One Rate® Extra Large Box",maxVol:2200,maxLbs:50,kind:"box"},
+  {code:"fedex_tube",name:"FedEx One Rate® Tube",maxVol:2200,maxLbs:50,kind:"tube"},
+];
+const ONERATE_BOXES=FEDEX_ONERATE.filter(b=>b.kind==="box").sort((a,b)=>a.maxVol-b.maxVol);
+// pick the smallest One Rate box the item's dims + weight qualify for; null if it exceeds One Rate limits
+function oneRateBoxFor(L,W,H,lbs){
+  const vol=(+L||0)*(+W||0)*(+H||0); const w=+lbs||0;
+  if(!vol) return null;
+  for(const b of ONERATE_BOXES){ if(vol<=b.maxVol && w<=b.maxLbs) return b; }
+  return null;
+}
 const CART_ITEMS=[
   {name:"Ruffle Leggings",l:8,w:6,h:1,wt:0.4,price:24},
   {name:"Tutu Set",l:10,w:8,h:3,wt:0.9,price:38},
@@ -336,7 +331,7 @@ const CART_ITEMS=[
   {name:"Sandals",l:9,w:5,h:4,wt:0.7,price:22},
   {name:"Hair Bow (3pk)",l:5,w:4,h:2,wt:0.15,price:12},
 ];
-const CHECKOUT_DEFAULTS={registered:true,presentation:"named",handling:0,freeThreshold:75,services:{fedex_ground:true,fedex_home:true,fedex_2day:true,fedex_prio:false,usps_ga:true,usps_priority:true,ups_ground:false}};
+const CHECKOUT_DEFAULTS={registered:true,presentation:"named",handling:0,freeThreshold:75,services:{fedex_ground:true,fedex_home:true,fedex_2day:true,fedex_prio:false}};
 
 /* ════════ PLATFORM CARRIER ACCOUNTS ════════ */
 const PLATFORM_CARRIERS=[
@@ -356,17 +351,8 @@ const PLANS=[
 ];
 
 /* ════════ LEDGER + INVOICE SEEDS ════════ */
-const SEED_LEDGER=[
-  {id:"l1",date:new Date(Date.now()-6*864e5).toLocaleDateString(),type:"Funds added",ref:"ACH deposit",amount:500},
-  {id:"l2",date:new Date(Date.now()-5*864e5).toLocaleDateString(),type:"Shipping charge",ref:"#1039",amount:-11.34},
-  {id:"l3",date:new Date(Date.now()-4*864e5).toLocaleDateString(),type:"Shipping charge",ref:"#1037",amount:-9.02},
-  {id:"l4",date:new Date(Date.now()-3*864e5).toLocaleDateString(),type:"Adjustment",ref:"FedEx audit refund",amount:4.18},
-  {id:"l5",date:new Date(Date.now()-2*864e5).toLocaleDateString(),type:"Adjustment",ref:"Dim-weight correction",amount:-2.40},
-];
-const SEED_INVOICES=[
-  {id:"inv1",number:"INV-1001",client:"Sparkle in Pink",date:new Date(Date.now()-7*864e5).toLocaleDateString(),labels:42,amount:512.88,status:"Paid"},
-  {id:"inv2",number:"INV-1002",client:"Sparkle in Pink",date:new Date(Date.now()-1*864e5).toLocaleDateString(),labels:18,amount:214.60,status:"Open"},
-];
+const SEED_LEDGER=[];
+const SEED_INVOICES=[];
 
 /* analytics + utilities */
 function analytics(shipments){
@@ -393,10 +379,7 @@ function downloadCSV(name,rows){
 }
 
 /* ════════ EMAIL SEED ════════ */
-const SEED_EMAILS=[
-  {id:"e1",date:new Date(Date.now()-3600e3).toLocaleString(),to:"jenna@example.com",subject:"Your order #1039 is on its way ☁️",type:"Shipped",status:"sent"},
-  {id:"e2",date:new Date(Date.now()-7200e3).toLocaleString(),to:"marcus@example.com",subject:"Delivered: your order #1037 ☁️",type:"Delivered",status:"sent"},
-];
+const SEED_EMAILS=[];
 const NOTIFY_DEFAULTS={orderConfirm:true,shipped:true,delivered:true,returnLabel:true,exception:true};
 
 /* ════════ INTERNATIONAL ════════ */
@@ -458,8 +441,7 @@ function Login({users,onLogin,brand}){
         <div className="mt-4 bg-white/60 border border-stone-200 rounded-lg p-3 text-[12px] text-stone-500 space-y-1">
           <div className="font-medium text-stone-600">Demo logins</div>
           <button onClick={()=>{setEmail("spencer@shippingcloud.net");setPw("admin");setMode("signin");}} className="block hover:text-[#0086E0]">Admin · spencer@shippingcloud.net / admin</button>
-          <button onClick={()=>{setEmail("ops@sparkleinpink.com");setPw("sip123");setMode("signin");}} className="block hover:text-[#0086E0]">Customer · ops@sparkleinpink.com / sip123</button>
-        </div>
+                  </div>
         <p className="text-[11px] text-stone-400 text-center mt-3">Prototype sign-in. For live customer logins, connect a real auth provider + database.</p>
       </div>
     </div>
@@ -730,7 +712,7 @@ export default function App(){
   const [qq,setQQ]=useState(false);
   const [navOpen,setNavOpen]=useState(false);
   const [prefill,setPrefill]=useState(null);
-  const [settings,setSettings]=usePersist("settings",{company:"Sparkle in Pink",sender:{name:"Matt Goeckeritz",company:"Riley Blake Designs",zip:"84003",state:"UT",city:"Lehi",address1:"4060 W 2100 N",phone:"801-816-0540",email:"spencertesttes@test.com"},defaultBillTo:"sender",thirdPartyAccts:[{id:"tp1",carrier:"FedEx",account:"20601652",label:"England FedEx"}],shopify:true,notify:NOTIFY_DEFAULTS,boxes:SEED_BOXES,checkout:CHECKOUT_DEFAULTS,platforms:PLATFORM_DEFAULTS,plan:"starter",england:{enabled:false,base:"https://englandship.rocksolidinternet.com",apiKey:"",customerId:"",account:"20601652"},addresses:[{id:"ab1",name:"Riley Blake Designs",city:"Lehi",state:"UT",zip:"84003",address1:"4060 W 2100 N"}],brand:DEFAULT_BRAND,domains:[]});
+  const [settings,setSettings]=usePersist("settings",{company:"Freightwire",sender:{name:"Matt Goeckeritz",company:"Riley Blake Designs",zip:"84003",state:"UT",city:"Lehi",address1:"4060 W 2100 N",phone:"801-816-0540",email:"spencertesttes@test.com"},defaultBillTo:"sender",thirdPartyAccts:[{id:"tp1",carrier:"FedEx",account:"20601652",label:"England FedEx"}],shopify:true,notify:NOTIFY_DEFAULTS,boxes:SEED_BOXES,checkout:CHECKOUT_DEFAULTS,platforms:PLATFORM_DEFAULTS,plan:"starter",england:{enabled:false,base:"https://englandship.rocksolidinternet.com",apiKey:"",customerId:"",account:"20601652"},addresses:[{id:"ab1",name:"Riley Blake Designs",city:"Lehi",state:"UT",zip:"84003",address1:"4060 W 2100 N"}],brand:DEFAULT_BRAND,domains:[]});
 
   useEffect(()=>{ if(currentUser&&currentUser.role==="customer"&&currentUser.clientId) setClientId(currentUser.clientId); },[currentUser]);
   // Capture the Shopify connection handed back by the OAuth function (#shop=…&token=…)
@@ -891,7 +873,7 @@ export default function App(){
 /* ════════ SHIP ════════ */
 function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDrafts,prefill,clearPrefill,onShipped,onPending,logEmail,onQuickQuote}){
   const empty={country:"United States",name:"",company:"",zip:"",state:"",city:"",address1:"",address2:"",address3:"",phone:"",email:""};
-  const [sender,setSender]=useState({country:"United States",...settings.sender,address2:"STE A",address3:""});
+  const [sender,setSender]=useState({country:"United States",...settings.sender,address2:"",address3:""});
   const [receiver,setReceiver]=useState(empty);
   const [reference,setReference]=useState("");
   const [invoiceNo,setInvoiceNo]=useState("");
@@ -910,6 +892,9 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
   const [bought,setBought]=useState(null);
   const [shipStatus,setShipStatus]=useState(null);
   const [labelPreview,setLabelPreview]=useState(null); // {pdf, tracking, service, carrier}
+  const [shipDate,setShipDate]=useState(()=>new Date().toISOString().slice(0,10));
+  const [oneRate,setOneRate]=useState(false);
+  const orBox=oneRate?oneRateBoxFor(pieces[0]&&pieces[0].L,pieces[0]&&pieces[0].W,pieces[0]&&pieces[0].H,(+(pieces[0]&&pieces[0].weight)||0)+(+(pieces[0]&&pieces[0].oz)||0)/16):null;
   const [recErrors,setRecErrors]=useState([]);
   const [selectedOrder,setSelectedOrder]=useState(null);
   const [verify,setVerify]=useState(null);
@@ -980,7 +965,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
 
   const swap=()=>{const s=sender;setSender(receiver);setReceiver(s);};
   const ready=/^\d{5}/.test(receiver.zip||"")&&totalWeight>0;
-  const shipment={fromZip:sender.zip||client.origin,toZip:receiver.zip,pieces:pieces.map(p=>({...p,weight:pw(p)})),residential,signature,signatureOption:sigOption,saturdayDelivery:saturday,intl};
+  const shipment={fromZip:sender.zip||client.origin,toZip:receiver.zip,pieces:pieces.map(p=>({...p,weight:pw(p)})),residential,signature,signatureOption:sigOption,saturdayDelivery:saturday,intl,packageTypeCode:orBox?orBox.code:""};
   // Front screen shows FedEx only (until a USPS/UPS/DAP deal is added). Blank-price skeleton before rates load.
   const FEDEX_SKELETON=[
     {key:"fedex_ground",carrier:"FedEx",label:"FedEx Ground®",cost:null},
@@ -1011,7 +996,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
       });
     } else setRateSrc({rates:localQuotes(),live:false,loading:false,error:null});
     return ()=>{cancel=true;};
-  },[JSON.stringify(pieces),receiver.zip,sender.zip,residential,signature,intl,settings.england]);
+  },[JSON.stringify(pieces),receiver.zip,sender.zip,residential,signature,intl,settings.england,oneRate,orBox&&orBox.code]);
   // address classified yet? only then do we hide the non-matching ground product
   const addrClassified=!!(resTouched||(verify&&verify.type));
   const quotes=useMemo(()=>{
@@ -1055,8 +1040,8 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
     }
     setBought(q.key);setShipStatus({state:"booking",key:q.key});
     if(!q.serviceCode||!q.carrierCode){setShipStatus({state:"error",key:q.key,msg:"Enter the shipment details so live rates load, then print (need the carrier/service from the rate)."});setBought(null);return;}
-    const order={reference:reference||invoiceNo||"",orderNumber:invoiceNo||reference||"",
-      carrierCode:q.carrierCode,serviceCode:q.serviceCode,packageTypeCode:q.packageTypeCode||"",
+    const order={reference:reference||invoiceNo||"",orderNumber:invoiceNo||reference||"",shipmentDate:shipDate,
+      carrierCode:q.carrierCode,serviceCode:q.serviceCode,packageTypeCode:(oneRate&&orBox)?orBox.code:(q.packageTypeCode||""),
       shippingService:q.label,shippingTotal:String(q.sell??q.cost??"0.00"),contentDescription:"Merchandise",
       signatureOption:sigOption,saturdayDelivery:saturday,insuranceAmount:insurance||null,residential,
       billingParty:billTo==="third"?"third_party":(billTo==="receiver"?"receiver":"sender"),billingAccount:billTo==="third"?(thirdAcct||null):null,
@@ -1108,7 +1093,7 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
           </div>
         </div>
         <div className="flex flex-wrap items-end gap-3 border border-stone-200 rounded-lg bg-white p-3">
-          <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Ship date</div><div className="text-sm font-mono text-stone-800 py-1">{new Date().toLocaleDateString()}</div></div>
+          <div><div className="text-[10px] uppercase tracking-widest text-stone-400">Ship date</div><input type="date" value={shipDate} onChange={e=>setShipDate(e.target.value)} className="text-sm font-mono text-stone-800 py-1 bg-white border border-stone-300 rounded px-2 outline-none focus:border-[#0099FF]"/></div>
           <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">Invoice #</div><input value={invoiceNo} onChange={e=>setInvoiceNo(e.target.value)} placeholder="INV-…" className="w-full bg-transparent text-sm outline-none border-b border-stone-200 focus:border-[#0099FF] py-1 placeholder-stone-300"/></div>
           <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">PO #</div><input value={poNo} onChange={e=>setPoNo(e.target.value)} placeholder="PO-…" className="w-full bg-transparent text-sm outline-none border-b border-stone-200 focus:border-[#0099FF] py-1 placeholder-stone-300"/></div>
           <div className="flex-1 min-w-0"><div className="text-[10px] uppercase tracking-widest text-stone-400">Reference #</div><input value={reference} onChange={e=>setReference(e.target.value)} placeholder="order / ref" className="w-full bg-transparent text-sm outline-none border-b border-stone-200 focus:border-[#0099FF] py-1 placeholder-stone-300"/></div>
@@ -1156,12 +1141,14 @@ function Ship({client,accounts,orders,settings,setSettings,rules,drafts,setDraft
               <div className="flex items-center gap-1"><span className="text-[10px] uppercase tracking-widest text-stone-500">Insure $</span><input type="number" value={insurance} onChange={e=>setInsurance(e.target.value)} placeholder="0" className="w-16 bg-white border border-stone-300 rounded px-2 py-1 text-sm font-mono outline-none focus:border-[#0099FF] placeholder-stone-300"/></div>
               <div className="flex items-center gap-1.5"><span className="text-[10px] uppercase tracking-widest text-stone-500">Signature</span><select value={sigOption} onChange={e=>{setSigOption(e.target.value);setSig(e.target.value!=="none");}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-[#0099FF]"><option value="none">None</option><option value="direct">Direct signature</option><option value="indirect">Indirect signature</option><option value="adult">Adult signature</option></select></div>
               {quotes.some(q=>{const l=String(q.label||"").toLowerCase();return l.includes("fedex")&&/(overnight|2\s?day|express saver)/.test(l);})&&<label className="flex items-center gap-1.5 text-[11px] text-stone-600 cursor-pointer"><input type="checkbox" checked={saturday} onChange={e=>setSat(e.target.checked)} className="accent-[#0086E0]"/><span className="uppercase tracking-widest text-stone-500">Saturday delivery</span></label>}
+              <label className="flex items-center gap-1.5 text-[11px] text-stone-600 cursor-pointer"><input type="checkbox" checked={oneRate} onChange={e=>setOneRate(e.target.checked)} className="accent-[#0086E0]"/><span className="uppercase tracking-widest text-stone-500">FedEx One Rate</span></label>
             </div>
           </div>
+          {oneRate&&<div className={`text-[12px] rounded px-3 py-2 flex items-center gap-2 ${orBox?"bg-[#E6F4FF] text-[#0072BE] border border-[#99D6FF]":"bg-amber-50 text-amber-700 border border-amber-200"}`}><Boxes className="w-4 h-4 shrink-0"/>{orBox?<span>Qualifies for <b>{orBox.name}</b> — pricing this box only ({(+(pieces[0]&&pieces[0].L)||0)}×{(+(pieces[0]&&pieces[0].W)||0)}×{(+(pieces[0]&&pieces[0].H)||0)} in). Enter dims/weight to auto-select.</span>:<span>Enter length, width, height &amp; weight — the package must fit a One Rate box (≤2,200 cu in, ≤50 lb). Larger shipments aren't eligible for One Rate.</span>}</div>}
           {pieces.map((p,i)=>(
             <div key={i} className="flex flex-wrap items-end gap-2 bg-white border border-stone-200 rounded px-2 py-2">
               <div className="text-[11px] text-stone-400 font-mono w-6">#{i+1}</div>
-              <div><div className="text-[10px] uppercase tracking-widest text-stone-500">Box</div><select onChange={e=>{const pr=(settings.boxes||SEED_BOXES)[+e.target.value];if(pr)setPiece(i,{L:pr.L,W:pr.W,H:pr.H,weight:p.weight});}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-[#0099FF]"><option value="-1">Custom</option>{(settings.boxes||SEED_BOXES).map((pr,j)=><option key={pr.id} value={j}>{pr.name}</option>)}</select></div>
+              <div><div className="text-[10px] uppercase tracking-widest text-stone-500">Box</div><select onChange={e=>{const v=e.target.value; if(v.startsWith("or:")){setOneRate(true);} else {const pr=(settings.boxes||SEED_BOXES)[+v];if(pr)setPiece(i,{L:pr.L,W:pr.W,H:pr.H,weight:p.weight});}}} className="bg-white border border-stone-300 rounded px-2 py-1 text-sm outline-none focus:border-[#0099FF]"><option value="-1">Custom</option>{(settings.boxes||SEED_BOXES).map((pr,j)=><option key={pr.id} value={j}>{pr.name}</option>)}<optgroup label="FedEx One Rate">{FEDEX_ONERATE.map(b=><option key={b.code} value={"or:"+b.code}>{b.name}</option>)}</optgroup></select></div>
               <PkgInput label="L" req value={p.L} onChange={e=>setPiece(i,{L:e.target.value})}/>
               <PkgInput label="W" req value={p.W} onChange={e=>setPiece(i,{W:e.target.value})}/>
               <PkgInput label="H" req value={p.H} onChange={e=>setPiece(i,{H:e.target.value})}/>
@@ -1813,7 +1800,7 @@ function Dashboard({shipments,orders,returns,goTab}){
 
 /* ════════ BATCH ════════ */
 const US_STATES=["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
-const SERVICE_OPTIONS={FedEx:["FedEx Ground","FedEx Home Delivery","FedEx 2Day","FedEx Express Saver","FedEx Standard Overnight","FedEx Priority Overnight"],UPS:["UPS Ground","UPS 3 Day Select","UPS 2nd Day Air","UPS Next Day Air"],DHL:["DHL Express"]};
+const SERVICE_OPTIONS={FedEx:["FedEx Ground","FedEx Home Delivery","FedEx 2Day","FedEx Express Saver","FedEx Standard Overnight","FedEx Priority Overnight"]};
 const speedRank=(label)=>{const t=String(label||"").toLowerCase();if(/first overnight/.test(t))return 1;if(/priority overnight/.test(t))return 2;if(/standard overnight|next day/.test(t))return 3;if(/2.?day|2nd day air/.test(t))return 4;if(/express saver|3 day/.test(t))return 5;if(/home|ground/.test(t))return 7;return 6;};
 function Batch({orders,setOrders,client,rules,onShipped}){
   const pool=orders.filter(o=>o.status==="unfulfilled");
